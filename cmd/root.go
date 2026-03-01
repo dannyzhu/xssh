@@ -7,6 +7,7 @@ import (
 
 	"github.com/xssh/xssh/app"
 	"github.com/xssh/xssh/config"
+	"github.com/xssh/xssh/selector"
 )
 
 // ParsedArgs holds the result of CLI argument parsing.
@@ -132,8 +133,21 @@ func runGroup(name string) {
 	os.Exit(1)
 }
 
-// runTUI launches the main TUI application.
+// runTUI launches the main TUI application. If targets is empty, the
+// interactive host selector runs first.
 func runTUI(targets []string) {
+	if len(targets) == 0 {
+		chosen, err := selector.Run()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "xssh: selector error: %v\n", err)
+			os.Exit(1)
+		}
+		if len(chosen) == 0 {
+			// User cancelled
+			return
+		}
+		targets = chosen
+	}
 	if err := app.Run(targets); err != nil {
 		fmt.Fprintf(os.Stderr, "xssh: %v\n", err)
 		os.Exit(1)
