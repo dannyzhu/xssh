@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/xssh/xssh/app"
+	"github.com/xssh/xssh/config"
 )
 
 // ParsedArgs holds the result of CLI argument parsing.
@@ -95,27 +98,45 @@ func Execute() {
 
 // runListGroups prints all saved groups to stdout.
 func runListGroups() {
-	fmt.Println("(no groups saved)")
+	fmt.Println("(no groups saved — use --save NAME hosts… to create one)")
 }
 
 // runListHosts prints all SSH config aliases to stdout.
 func runListHosts() {
-	fmt.Println("(no SSH config found)")
+	hosts, err := config.ListHosts()
+	if err != nil || len(hosts) == 0 {
+		fmt.Println("(no SSH config hosts found)")
+		return
+	}
+	for _, h := range hosts {
+		line := h.Alias
+		if h.HostName != h.Alias {
+			line += "\t→ " + h.HostName
+		}
+		if h.User != "" {
+			line += "\t(" + h.User + ")"
+		}
+		fmt.Println(line)
+	}
 }
 
 // runSaveGroup saves a group with the given targets.
 func runSaveGroup(name string, targets []string) {
+	// Config integration in Task 18/19; placeholder acknowledgement for now.
 	fmt.Printf("Saved group %q with %d hosts\n", name, len(targets))
 }
 
 // runGroup loads and launches a saved group.
 func runGroup(name string) {
-	fmt.Fprintf(os.Stderr, "xssh: group %q not found\n", name)
+	fmt.Fprintf(os.Stderr, "xssh: group %q not found (use --save to create groups)\n", name)
 	os.Exit(1)
 }
 
 // runTUI launches the main TUI application.
 func runTUI(targets []string) {
-	// Placeholder — wired up in Task 13
-	fmt.Printf("xssh: starting with %d pane(s)\n", len(targets))
+	if err := app.Run(targets); err != nil {
+		fmt.Fprintf(os.Stderr, "xssh: %v\n", err)
+		os.Exit(1)
+	}
 }
+
