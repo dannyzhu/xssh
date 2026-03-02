@@ -188,16 +188,21 @@ func (m *Model) dispatchAction(action Action, _ string) tea.Cmd {
 		if idx < len(m.panes) && !m.panes[idx].Closed {
 			m.focusedPane = idx
 			m.zoomedPane = -1
+			m.focusTarget = FocusPane
 		}
 
 	case ActionFocusUp:
 		m.moveFocus(-m.layout.Cols, 0)
+		m.focusTarget = FocusPane
 	case ActionFocusDown:
 		m.moveFocus(m.layout.Cols, 0)
+		m.focusTarget = FocusPane
 	case ActionFocusLeft:
 		m.moveFocus(-1, 0)
+		m.focusTarget = FocusPane
 	case ActionFocusRight:
 		m.moveFocus(1, 0)
+		m.focusTarget = FocusPane
 
 	case ActionZoom:
 		if m.zoomedPane == m.focusedPane {
