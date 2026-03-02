@@ -628,6 +628,7 @@ func (m Model) renderHelp() string {
   Ctrl+\ e     Add a new pane
   Ctrl+\ s     Save current session as group
   Ctrl+\ ?     Show this help
+  Ctrl+\ Ctrl+L  Force screen redraw
   Ctrl+\ \     Send Ctrl+\ to session
 
   Scroll mode:

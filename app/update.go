@@ -280,6 +280,9 @@ func (m *Model) dispatchAction(action Action, _ string) tea.Cmd {
 			}
 		}
 
+	case ActionRepaint:
+		return tea.ClearScreen
+
 	case ActionDelete:
 		// Same as entering scroll mode then searching (plan: Ctrl+\+/ = scroll mode /)
 		if m.focusedPane >= 0 && m.focusedPane < len(m.panes) {

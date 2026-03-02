@@ -38,6 +38,7 @@ const (
 	// Misc
 	ActionHelp
 	ActionSaveGroup
+	ActionRepaint     // force full screen redraw
 	ActionPassthrough // re-emit Ctrl+\ itself to the session
 	ActionDelete      // Ctrl+\+/ → same as scroll-mode search (see plan)
 )
@@ -142,6 +143,9 @@ func (k *Keymap) resolveSecond(key string) Action {
 
 	case "/":
 		return ActionDelete // Ctrl+\+/ deletes/searches (plan: same as scroll /); handled in context
+
+	case "ctrl+l":
+		return ActionRepaint
 
 	// Sending Ctrl+\ to the session itself
 	case KeyCtrlBackslash:
