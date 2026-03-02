@@ -35,10 +35,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.PaneID >= 0 && msg.PaneID < len(m.panes) {
 			p := m.panes[msg.PaneID]
 			p.VTerm.Write(msg.Data)
-			// Take a styled + plain snapshot of the screen and let the
-			// scroll buffer detect lines that scrolled off the top.
-			styled, plain := pane.SnapshotVTerm(p.VTerm)
-			p.Scroll.UpdateFromScreen(styled, plain)
+			p.Scroll.AppendRaw(msg.Data)
 			// Keep listening
 			if p.Session != nil {
 				cmds = append(cmds, listenPane(msg.PaneID, p.Session.Output()))
@@ -247,7 +244,9 @@ func (m *Model) dispatchAction(action Action, _ string) tea.Cmd {
 
 	case ActionScrollMode:
 		if m.focusedPane >= 0 && m.focusedPane < len(m.panes) {
-			m.panes[m.focusedPane].Mode = pane.ModeScroll
+			p := m.panes[m.focusedPane]
+			p.Scroll.Replay(p.Width())
+			p.Mode = pane.ModeScroll
 		}
 
 	case ActionHelp:
@@ -651,8 +650,10 @@ func (m *Model) handleMouseScroll(x, y int, up bool) {
 			y >= rect.Y && y < rect.Y+rect.Height {
 			p := m.panes[i]
 			h := p.Height()
+			w := p.Width()
+			// Ensure replay cache is fresh before checking scroll state.
+			p.Scroll.Replay(w)
 			if up {
-				// Only enter scroll mode if there is history above the live view.
 				if !p.Scroll.CanScrollUp(h) {
 					return
 				}
@@ -662,7 +663,7 @@ func (m *Model) handleMouseScroll(x, y int, up bool) {
 				p.Scroll.ScrollUp(3)
 			} else {
 				if p.Mode == pane.ModeNormal {
-					return // already at bottom, nothing to do
+					return
 				}
 				p.Scroll.ScrollDown(3)
 				if p.Scroll.IsAtBottom() {

@@ -2,114 +2,81 @@ package pane
 
 import "github.com/charmbracelet/lipgloss"
 
-// scrollLine holds both an ANSI-styled representation (for coloured display)
-// and a plain-text copy (for searching and width measurement).
-type scrollLine struct {
-	styled string
-	plain  string
-}
+const replayHeight = 10000 // rows for the replay VTerm
 
-// ScrollBuffer holds a capped history of rendered lines and tracks scroll offset.
-// Lines are stored with ANSI styling so scroll-mode display preserves terminal colours.
+// ScrollBuffer stores raw terminal output and replays it into a tall
+// off-screen VTerm to produce a full, coloured scrollback history.
 type ScrollBuffer struct {
-	lines    []scrollLine
-	maxLines int
-	offset   int // 0 = at bottom; positive = scrolled up by N lines
+	raw    []byte // raw terminal bytes (same data fed to the live VTerm)
+	maxRaw int
 
-	// prevPlain / prevStyledLines are the previous VTerm screen snapshot.
-	// Used by UpdateFromScreen to detect which rows scrolled off the top.
-	prevPlain       []string
-	prevStyledLines []string
+	offset int // 0 = at bottom; positive = scrolled up by N lines
+
+	// Replay cache — rebuilt lazily when raw data changes.
+	cacheStyled []string // styled lines (with ANSI colours)
+	cachePlain  []string // plain-text lines (for search/width)
+	cacheDirty  bool
+	cacheCols   int
 }
 
-// NewScrollBuffer creates a ScrollBuffer capped at maxLines.
+// NewScrollBuffer creates a ScrollBuffer.
+// maxLines is kept as the parameter name for API compat but internally
+// controls the raw byte budget (maxLines * 200 bytes heuristic).
 func NewScrollBuffer(maxLines int) *ScrollBuffer {
-	return &ScrollBuffer{maxLines: maxLines}
+	maxRaw := maxLines * 200
+	if maxRaw < 1<<20 {
+		maxRaw = 1 << 20 // at least 1 MB
+	}
+	return &ScrollBuffer{maxRaw: maxRaw, cacheDirty: true}
 }
 
-// UpdateFromScreen takes a new VTerm screen snapshot (styled + plain slices
-// of equal length) and detects lines that scrolled off the top compared to
-// the previous snapshot.  Those lines are added to the history buffer.
-func (b *ScrollBuffer) UpdateFromScreen(styled, plain []string) {
-	if len(b.prevPlain) > 0 && len(plain) > 0 {
-		scrolled := b.detectScroll(plain)
-		for i := 0; i < scrolled; i++ {
-			b.addLine(b.prevStyled(i), b.prevPlainLine(i))
+// AppendRaw stores new terminal output bytes for later replay.
+func (b *ScrollBuffer) AppendRaw(data []byte) {
+	b.raw = append(b.raw, data...)
+	if len(b.raw) > b.maxRaw {
+		// Keep the most recent portion.  Try to land on a newline boundary
+		// to minimise visual corruption after truncation.
+		cut := len(b.raw) - b.maxRaw
+		for cut < len(b.raw) && b.raw[cut] != '\n' {
+			cut++
 		}
-	}
-	// Store current snapshot for next diff.
-	b.prevPlain = make([]string, len(plain))
-	copy(b.prevPlain, plain)
-	b.prevStyledLines = make([]string, len(styled))
-	copy(b.prevStyledLines, styled)
-}
-
-// detectScroll determines how many lines from the top of the previous screen
-// have scrolled off, by finding where the new screen's top line appears in
-// the old screen.
-func (b *ScrollBuffer) detectScroll(newPlain []string) int {
-	if len(newPlain) == 0 || len(b.prevPlain) == 0 {
-		return 0
-	}
-	// If the top row didn't change, no scrolling happened — skip.
-	// This avoids false positives from in-place edits or prompt redraws.
-	if newPlain[0] == b.prevPlain[0] {
-		return 0
-	}
-	// The top row changed — try to find a shift amount such that
-	// newPlain[0..minMatch) == prevPlain[shift..shift+minMatch).
-	// Combined with the top-row-must-change guard above, a 2-row
-	// consecutive match is sufficient to avoid false positives while
-	// still detecting scroll when new content appears below.
-	minMatch := 2
-	if minMatch > len(newPlain) {
-		minMatch = len(newPlain)
-	}
-	for shift := 1; shift+minMatch <= len(b.prevPlain); shift++ {
-		match := true
-		for j := 0; j < minMatch; j++ {
-			if newPlain[j] != b.prevPlain[shift+j] {
-				match = false
-				break
-			}
+		if cut < len(b.raw) {
+			cut++ // skip the newline itself
 		}
-		if match {
-			return shift
-		}
+		b.raw = b.raw[cut:]
 	}
-	// Top changed but no matching shift found (clear screen, full redraw).
-	return 0
+	b.cacheDirty = true
 }
 
-func (b *ScrollBuffer) prevStyled(i int) string {
-	if i < len(b.prevStyledLines) {
-		return b.prevStyledLines[i]
+// replay rebuilds the cache by feeding all stored raw bytes into a tall
+// temporary VTerm and rendering every used row.
+func (b *ScrollBuffer) replay(cols int) {
+	if !b.cacheDirty && b.cacheCols == cols {
+		return
 	}
-	return ""
+	if cols <= 0 {
+		cols = 80
+	}
+	v := NewVTerm(replayHeight, cols)
+	v.Write(b.raw)
+
+	curRow, _ := v.Cursor()
+	n := curRow + 1
+	b.cacheStyled = make([]string, n)
+	b.cachePlain = make([]string, n)
+	for r := 0; r < n; r++ {
+		b.cacheStyled[r] = renderRow(v, r, cols, -1, -1)
+		b.cachePlain[r] = renderRowPlain(v, r, cols)
+	}
+	b.cacheDirty = false
+	b.cacheCols = cols
 }
 
-func (b *ScrollBuffer) prevPlainLine(i int) string {
-	if i < len(b.prevPlain) {
-		return b.prevPlain[i]
-	}
-	return ""
-}
-
-func (b *ScrollBuffer) addLine(styled, plain string) {
-	b.lines = append(b.lines, scrollLine{styled: styled, plain: plain})
-	if len(b.lines) > b.maxLines {
-		b.lines = b.lines[len(b.lines)-b.maxLines:]
-	}
-}
-
-// AddLine adds a single plain-text line (for backward compat / tests).
-func (b *ScrollBuffer) AddLine(line string) {
-	b.addLine(line, line)
-}
+// ---------- scroll navigation ----------
 
 // ScrollUp scrolls toward older history by n lines.
 func (b *ScrollBuffer) ScrollUp(n int) {
-	b.offset = min(b.offset+n, len(b.lines))
+	b.offset = min(b.offset+n, b.totalLines())
 }
 
 // ScrollDown scrolls toward newer history by n lines.
@@ -121,7 +88,7 @@ func (b *ScrollBuffer) ScrollDown(n int) {
 func (b *ScrollBuffer) ToBottom() { b.offset = 0 }
 
 // ToTop jumps to the oldest available line.
-func (b *ScrollBuffer) ToTop() { b.offset = len(b.lines) }
+func (b *ScrollBuffer) ToTop() { b.offset = b.totalLines() }
 
 // IsAtBottom returns true when no scroll offset is applied.
 func (b *ScrollBuffer) IsAtBottom() bool { return b.offset == 0 }
@@ -129,68 +96,92 @@ func (b *ScrollBuffer) IsAtBottom() bool { return b.offset == 0 }
 // Offset returns the current scroll offset.
 func (b *ScrollBuffer) Offset() int { return b.offset }
 
-// Len returns the number of stored lines.
-func (b *ScrollBuffer) Len() int { return len(b.lines) }
+// Len returns the number of stored lines (requires a prior Replay call).
+func (b *ScrollBuffer) Len() int { return b.totalLines() }
 
-// CanScrollUp reports whether there is history above the current view.
+// CanScrollUp reports whether there is content above the visible window.
 func (b *ScrollBuffer) CanScrollUp(height int) bool {
-	return len(b.lines) > height && b.offset < len(b.lines)-height
+	return b.totalLines() > height && b.offset < b.totalLines()-height
 }
 
-// Lines returns a view of up to height plain-text lines ending at the scroll position.
-func (b *ScrollBuffer) Lines(height int) []string {
-	sl := b.sliceLines(height)
-	out := make([]string, len(sl))
-	for i, l := range sl {
-		out[i] = l.plain
-	}
-	return out
-}
+func (b *ScrollBuffer) totalLines() int { return len(b.cacheStyled) }
 
-// StyledLines returns a view of up to height ANSI-styled lines at the scroll position.
+// ---------- content access ----------
+
+// Replay rebuilds the internal cache if new data has been appended.
+// Must be called (with the current pane width) before StyledLines / Lines.
+func (b *ScrollBuffer) Replay(cols int) { b.replay(cols) }
+
+// StyledLines returns up to height ANSI-styled lines at the current offset.
 func (b *ScrollBuffer) StyledLines(height int) []string {
-	sl := b.sliceLines(height)
-	out := make([]string, len(sl))
-	for i, l := range sl {
-		out[i] = l.styled
-	}
-	return out
+	return b.sliceStyled(height)
 }
 
-func (b *ScrollBuffer) sliceLines(height int) []scrollLine {
-	total := len(b.lines)
+// Lines returns up to height plain-text lines at the current offset.
+func (b *ScrollBuffer) Lines(height int) []string {
+	return b.slicePlain(height)
+}
+
+func (b *ScrollBuffer) sliceStyled(height int) []string {
+	total := b.totalLines()
 	if total == 0 || height <= 0 {
 		return nil
 	}
-	end := total - b.offset
+	start, end := b.window(height, total)
+	return b.cacheStyled[start:end]
+}
+
+func (b *ScrollBuffer) slicePlain(height int) []string {
+	total := b.totalLines()
+	if total == 0 || height <= 0 {
+		return nil
+	}
+	start, end := b.window(height, total)
+	return b.cachePlain[start:end]
+}
+
+func (b *ScrollBuffer) window(height, total int) (start, end int) {
+	end = total - b.offset
 	if end <= 0 {
 		end = 0
 	}
-	start := end - height
+	start = end - height
 	if start < 0 {
 		start = 0
 	}
 	if end > total {
 		end = total
 	}
-	return b.lines[start:end]
+	return
 }
+
+// ---------- search ----------
 
 // Search returns the indices of lines containing substr (plain text), newest first.
 func (b *ScrollBuffer) Search(substr string) []int {
 	var hits []int
-	for i := len(b.lines) - 1; i >= 0; i-- {
-		if containsSubstr(b.lines[i].plain, substr) {
+	for i := len(b.cachePlain) - 1; i >= 0; i-- {
+		if containsSubstr(b.cachePlain[i], substr) {
 			hits = append(hits, i)
 		}
 	}
 	return hits
 }
 
-// VisibleWidth returns the printable width of a styled line.
-func VisibleWidth(s string) int {
-	return lipgloss.Width(s)
+// ---------- backward compat ----------
+
+// AddLine is retained for existing tests.
+func (b *ScrollBuffer) AddLine(line string) {
+	b.AppendRaw([]byte(line + "\n"))
 }
+
+// UpdateFromScreen is a no-op now; raw bytes are the source of truth.
+func (b *ScrollBuffer) UpdateFromScreen(styled, plain []string) {}
+
+// VisibleWidth returns the printable width of a styled line.
+func VisibleWidth(s string) int { return lipgloss.Width(s) }
+
+// ---------- helpers ----------
 
 func containsSubstr(s, sub string) bool {
 	if len(sub) == 0 {

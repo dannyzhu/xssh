@@ -222,6 +222,7 @@ func (m Model) paneColor(idx int) lipgloss.Color {
 // ── Scroll content ────────────────────────────────────────────────────────────
 
 func (m Model) renderScrollContent(p *pane.Pane, w, h int) string {
+	p.Scroll.Replay(w)
 	styledLines := p.Scroll.StyledLines(h)
 	plainLines := p.Scroll.Lines(h)
 	blank := strings.Repeat(" ", w)

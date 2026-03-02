@@ -87,22 +87,6 @@ var ansi16 = [16]string{
 	"#0000ff", "#ff00ff", "#00ffff", "#ffffff",
 }
 
-// SnapshotVTerm returns every VTerm row as two parallel slices:
-//   - styled: ANSI-styled strings (for coloured display)
-//   - plain:  plain text (for searching / width measurement)
-//
-// No cursor highlight is baked in.
-func SnapshotVTerm(v *VTerm) (styled, plain []string) {
-	rows, cols := v.Size()
-	styled = make([]string, rows)
-	plain = make([]string, rows)
-	for r := 0; r < rows; r++ {
-		styled[r] = renderRow(v, r, cols, -1, -1)
-		plain[r] = renderRowPlain(v, r, cols)
-	}
-	return
-}
-
 // renderRowPlain renders one VTerm row as plain text (no ANSI).
 func renderRowPlain(v *VTerm, row, cols int) string {
 	var buf []byte
