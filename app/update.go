@@ -34,13 +34,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case PaneOutputMsg:
 		if msg.PaneID >= 0 && msg.PaneID < len(m.panes) {
 			p := m.panes[msg.PaneID]
-			// Capture rows before write so we can add new lines to scroll buffer
-			rowsBefore, _ := p.VTerm.Size()
-			curRowBefore, _ := p.VTerm.Cursor()
 			p.VTerm.Write(msg.Data)
-			// Add newly rendered lines to scroll buffer
-			curRowAfter, _ := p.VTerm.Cursor()
-			feedScrollBuffer(p, curRowBefore, curRowAfter, rowsBefore)
+			// Take a styled + plain snapshot of the screen and let the
+			// scroll buffer detect lines that scrolled off the top.
+			styled, plain := pane.SnapshotVTerm(p.VTerm)
+			p.Scroll.UpdateFromScreen(styled, plain)
 			// Keep listening
 			if p.Session != nil {
 				cmds = append(cmds, listenPane(msg.PaneID, p.Session.Output()))
@@ -612,43 +610,6 @@ func keyBytes(key string) []byte {
 	}
 }
 
-// feedScrollBuffer captures newly rendered VTerm rows and adds them to the
-// pane's ScrollBuffer. Only rows the cursor moved through are captured;
-// when the cursor moves up (clear / vim / readline) nothing is added to
-// avoid dumping duplicate or irrelevant screen content.
-func feedScrollBuffer(p *pane.Pane, rowBefore, rowAfter, totalRows int) {
-	if rowAfter < rowBefore {
-		// Cursor moved up (clear, full-screen app, readline edit).
-		// Do not dump the visible screen — that would add duplicate lines.
-		return
-	}
-	// Capture rows from rowBefore to rowAfter (inclusive).
-	_, cols := p.VTerm.Size()
-	for r := rowBefore; r <= rowAfter && r < totalRows; r++ {
-		line := renderRowPlain(p, r, cols)
-		p.Scroll.AddLine(line)
-	}
-}
-
-// renderRowPlain renders one VTerm row as plain text (no ANSI) for scroll storage.
-func renderRowPlain(p *pane.Pane, row, cols int) string {
-	var buf []byte
-	for c := 0; c < cols; c++ {
-		cell := p.VTerm.Cell(row, c)
-		ch := cell.Char
-		if ch == 0 {
-			ch = ' '
-		}
-		buf = append(buf, string(ch)...)
-	}
-	// Trim trailing spaces
-	line := string(buf)
-	i := len(line)
-	for i > 0 && line[i-1] == ' ' {
-		i--
-	}
-	return line[:i]
-}
 
 // handleMouseClick focuses the pane at terminal coordinate (x, y), or
 // activates the input bar when the user clicks the bottom chrome area.

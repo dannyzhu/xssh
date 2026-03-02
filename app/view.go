@@ -222,33 +222,30 @@ func (m Model) paneColor(idx int) lipgloss.Color {
 // ── Scroll content ────────────────────────────────────────────────────────────
 
 func (m Model) renderScrollContent(p *pane.Pane, w, h int) string {
-	lines := p.Scroll.Lines(h)
-	// Pad/truncate each line to exactly w runes so the fixed-width
-	// lipgloss container renders without gaps or wrapping.
+	styledLines := p.Scroll.StyledLines(h)
+	plainLines := p.Scroll.Lines(h)
 	blank := strings.Repeat(" ", w)
+
 	padded := make([]string, h)
 	for i := range padded {
 		padded[i] = blank
 	}
-	offset := h - len(lines)
-	for i, l := range lines {
-		// Truncate if longer than w, pad with spaces if shorter.
-		runes := []rune(l)
-		if len(runes) > w {
-			runes = runes[:w]
+	offset := h - len(styledLines)
+	for i, sl := range styledLines {
+		// Pad styled line to exactly w visible chars.
+		vis := lipgloss.Width(sl)
+		if vis < w {
+			sl += strings.Repeat(" ", w-vis)
 		}
-		for len(runes) < w {
-			runes = append(runes, ' ')
-		}
-		padded[offset+i] = string(runes)
+		padded[offset+i] = sl
 	}
-	// Highlight search matches
+	// Highlight search matches (search on plain text, apply to styled line)
 	if p.Mode == pane.ModeSearch && p.SearchQuery != "" {
-		for i, l := range padded {
-			if strings.Contains(l, p.SearchQuery) {
-				padded[i] = lipgloss.NewStyle().
+		for i, pl := range plainLines {
+			if strings.Contains(pl, p.SearchQuery) {
+				padded[offset+i] = lipgloss.NewStyle().
 					Background(lipgloss.Color("#FFD700")).
-					Render(l)
+					Render(padded[offset+i])
 			}
 		}
 	}
