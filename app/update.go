@@ -27,7 +27,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.ready = true
-		m.layout = layout.Compute(len(m.ActivePanes()), msg.Width, msg.Height, reservedHeight)
+		m.layout = layout.Compute(len(m.ActivePanes()), msg.Width, msg.Height, reservedHeight, m.borderMode == BorderShared)
 		m = m.resizePanes()
 
 	// ── Pane output ──────────────────────────────────────────────────────────
@@ -54,8 +54,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Apply current terminal size to newly connected session
 				if m.ready {
 					rect := m.layout.Panes[msg.PaneID]
-					contentW := max(1, rect.Width-2*borderWidth)
-					contentH := max(1, rect.Height-2*borderWidth)
+					contentW, contentH := m.paneContentSize(rect)
 					p.Session.Resize(contentH, contentW) //nolint:errcheck
 				}
 			case session.StatusDisconnected:
@@ -520,8 +519,7 @@ func (m Model) resizePanes() Model {
 			break
 		}
 		rect := m.layout.Panes[i]
-		contentW := max(1, rect.Width-2*borderWidth)
-		contentH := max(1, rect.Height-2*borderWidth)
+		contentW, contentH := m.paneContentSize(rect)
 		p.Resize(contentH, contentW)
 	}
 	return m
@@ -534,8 +532,7 @@ func (m *Model) addPaneToSlot(slot int, target string) tea.Cmd {
 		return nil
 	}
 	rect := m.layout.Panes[slot]
-	contentW := max(1, rect.Width-2*borderWidth)
-	contentH := max(1, rect.Height-2*borderWidth)
+	contentW, contentH := m.paneContentSize(rect)
 	p := pane.New(slot, sess, contentH, contentW)
 	m.panes[slot] = p
 	m.broadcastTo[slot] = false

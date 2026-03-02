@@ -30,7 +30,9 @@ var layoutTable = [10][2]int{
 // Compute calculates pane rectangles for n active panes inside a terminal
 // of (termWidth × termHeight) characters. reservedRows is the total number
 // of terminal rows consumed by chrome (status bar + input bar).
-func Compute(n, termWidth, termHeight, reservedRows int) Layout {
+// sharedBorders: if true, adjacent panes share a single border line instead
+// of each having independent borders, saving space.
+func Compute(n, termWidth, termHeight, reservedRows int, sharedBorders bool) Layout {
 	if n < 1 {
 		n = 1
 	}
@@ -43,6 +45,49 @@ func Compute(n, termWidth, termHeight, reservedRows int) Layout {
 
 	contentHeight := termHeight - reservedRows
 
+	if sharedBorders {
+		// Shared borders: total border cols = cols+1, border rows = rows+1.
+		// PaneRect stores content-only dimensions (no border included).
+		availW := termWidth - (cols + 1)
+		availH := contentHeight - (rows + 1)
+
+		paneW := availW / cols
+		paneH := availH / rows
+
+		lastColW := availW - paneW*(cols-1)
+		lastRowH := availH - paneH*(rows-1)
+
+		// X/Y positions account for the border chars.
+		panes := make([]PaneRect, total)
+		idx := 0
+		yOff := 1 + 1 // status bar row + top border row
+		for r := 0; r < rows; r++ {
+			h := paneH
+			if r == rows-1 {
+				h = lastRowH
+			}
+			xOff := 1 // left border column
+			for c := 0; c < cols; c++ {
+				w := paneW
+				if c == cols-1 {
+					w = lastColW
+				}
+				panes[idx] = PaneRect{
+					X:      xOff,
+					Y:      yOff,
+					Width:  w,
+					Height: h,
+					Empty:  idx >= n,
+				}
+				xOff += w + 1 // content + divider
+				idx++
+			}
+			yOff += h + 1 // content + divider
+		}
+		return Layout{Rows: rows, Cols: cols, Panes: panes}
+	}
+
+	// Full (independent) borders: each pane includes its own border chars.
 	paneH := contentHeight / rows
 	paneW := termWidth / cols
 

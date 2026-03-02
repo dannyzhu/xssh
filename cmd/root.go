@@ -17,6 +17,7 @@ type ParsedArgs struct {
 	SaveGroup  string   // --save NAME: save targets under this group name
 	ListGroups bool     // --list-groups
 	ListHosts  bool     // --list-hosts
+	BorderMode string   // --borders: "shared" (default) or "full"
 }
 
 // parseArgs parses os.Args[1:] and returns a ParsedArgs or an error.
@@ -30,7 +31,7 @@ type ParsedArgs struct {
 //   - "user@host" or host      → SSH target
 //   - more than 9 targets      → error
 func parseArgs(args []string) (*ParsedArgs, error) {
-	p := &ParsedArgs{}
+	p := &ParsedArgs{BorderMode: "shared"}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
@@ -44,6 +45,17 @@ func parseArgs(args []string) (*ParsedArgs, error) {
 				return nil, fmt.Errorf("xssh: %s requires an argument", arg)
 			}
 			p.Group = args[i]
+		case arg == "--borders":
+			i++
+			if i >= len(args) {
+				return nil, fmt.Errorf("xssh: --borders requires an argument (shared or full)")
+			}
+			switch args[i] {
+			case "shared", "full":
+				p.BorderMode = args[i]
+			default:
+				return nil, fmt.Errorf("xssh: --borders must be 'shared' or 'full', got %q", args[i])
+			}
 		case arg == "--save":
 			i++
 			if i >= len(args) {
@@ -88,13 +100,20 @@ func Execute() {
 		runSaveGroup(args.SaveGroup, args.Targets)
 		return
 	}
+
+	// Parse border mode
+	borderMode := app.BorderShared
+	if args.BorderMode == "full" {
+		borderMode = app.BorderFull
+	}
+
 	if args.Group != "" {
-		runGroup(args.Group)
+		runGroup(args.Group, borderMode)
 		return
 	}
 
 	// Launch TUI with the given targets (or selector if none)
-	runTUI(args.Targets)
+	runTUI(args.Targets, borderMode)
 }
 
 // runListGroups prints all saved groups to stdout.
@@ -146,7 +165,7 @@ func runSaveGroup(name string, targets []string) {
 }
 
 // runGroup loads a saved group and launches the TUI.
-func runGroup(name string) {
+func runGroup(name string, borderMode app.BorderMode) {
 	targets, err := config.LoadGroup(name)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "xssh: load group %q: %v\n", name, err)
@@ -156,12 +175,12 @@ func runGroup(name string) {
 		fmt.Fprintf(os.Stderr, "xssh: group %q not found (use --save to create groups)\n", name)
 		os.Exit(1)
 	}
-	runTUI(targets)
+	runTUI(targets, borderMode)
 }
 
 // runTUI launches the main TUI application. If targets is empty, the
 // interactive host selector runs first.
-func runTUI(targets []string) {
+func runTUI(targets []string, borderMode app.BorderMode) {
 	if len(targets) == 0 {
 		chosen, err := selector.Run()
 		if err != nil {
@@ -174,7 +193,7 @@ func runTUI(targets []string) {
 		}
 		targets = chosen
 	}
-	if err := app.Run(targets); err != nil {
+	if err := app.Run(targets, borderMode); err != nil {
 		fmt.Fprintf(os.Stderr, "xssh: %v\n", err)
 		os.Exit(1)
 	}

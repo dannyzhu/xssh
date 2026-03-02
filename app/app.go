@@ -26,7 +26,7 @@ const (
 
 // New builds a Model from a list of target strings and connects each session.
 // Targets are: "-" for local shell, "user@host" or alias for SSH.
-func New(targets []string) (Model, error) {
+func New(targets []string, borderMode BorderMode) (Model, error) {
 	if len(targets) == 0 {
 		targets = []string{"-"}
 	}
@@ -34,10 +34,10 @@ func New(targets []string) (Model, error) {
 		return Model{}, fmt.Errorf("maximum 9 panes, got %d", len(targets))
 	}
 
-	m := NewModel()
+	m := NewModel(borderMode)
 
 	// Compute an initial layout at a placeholder size; real size comes from WindowSizeMsg.
-	m.layout = layout.Compute(len(targets), defaultCols, defaultRows+reservedHeight, reservedHeight)
+	m.layout = layout.Compute(len(targets), defaultCols, defaultRows+reservedHeight, reservedHeight, borderMode == BorderShared)
 	total := m.layout.Rows * m.layout.Cols
 
 	m.panes = make([]*pane.Pane, total)
@@ -45,8 +45,7 @@ func New(targets []string) (Model, error) {
 
 	for i := 0; i < total; i++ {
 		rect := m.layout.Panes[i]
-		contentW := max(1, rect.Width-2*borderWidth)
-		contentH := max(1, rect.Height-2*borderWidth)
+		contentW, contentH := m.paneContentSize(rect)
 
 		if i < len(targets) {
 			sess, err := buildSession(targets[i])
@@ -147,8 +146,8 @@ func reconnectAfter(id, attempt int, d time.Duration) tea.Cmd {
 }
 
 // Run starts the bubbletea program with the given targets.
-func Run(targets []string) error {
-	m, err := New(targets)
+func Run(targets []string, borderMode BorderMode) error {
+	m, err := New(targets, borderMode)
 	if err != nil {
 		return err
 	}

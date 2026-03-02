@@ -123,6 +123,13 @@ func statusIndicator(sess session.Session) string {
 // ── Pane grid ────────────────────────────────────────────────────────────────
 
 func (m Model) renderPanesSection() string {
+	if m.borderMode == BorderShared {
+		return m.renderPanesSectionShared()
+	}
+	return m.renderPanesSectionFull()
+}
+
+func (m Model) renderPanesSectionFull() string {
 	rows := m.layout.Rows
 	cols := m.layout.Cols
 	if rows == 0 || cols == 0 {
@@ -147,17 +154,30 @@ func (m Model) renderPanesSection() string {
 }
 
 func (m Model) renderPane(idx, totalW, totalH int) string {
-	p := m.panes[idx]
-
 	borderColor := m.paneColor(idx)
 	borderStyle := lipgloss.RoundedBorder()
 
 	contentW := max(1, totalW-2)
 	contentH := max(1, totalH-2)
 
+	content := m.renderPaneContent(idx, contentW, contentH)
+
+	frame := lipgloss.NewStyle().
+		Border(borderStyle).
+		BorderForeground(borderColor).
+		Width(contentW).
+		Height(contentH).
+		Render(content)
+
+	return frame
+}
+
+// renderPaneContent renders the inner content of a pane (no border).
+func (m Model) renderPaneContent(idx, contentW, contentH int) string {
+	p := m.panes[idx]
+
 	var content string
 	if p.Closed {
-		// Grey blank cell
 		emptyStyle := lipgloss.NewStyle().
 			Width(contentW).Height(contentH).
 			Foreground(colorEmpty)
@@ -177,19 +197,182 @@ func (m Model) renderPane(idx, totalW, totalH int) string {
 		content = strings.Join(lines, "\n")
 	}
 
-	// Password overlay
 	if p.PasswordOverlay {
 		content = m.renderPasswordOverlay(idx, contentW, contentH)
 	}
 
-	frame := lipgloss.NewStyle().
-		Border(borderStyle).
-		BorderForeground(borderColor).
-		Width(contentW).
-		Height(contentH).
-		Render(content)
+	return content
+}
 
-	return frame
+// renderPanesSectionShared draws the pane grid as a single unit with shared
+// borders using box-drawing characters.
+func (m Model) renderPanesSectionShared() string {
+	rows := m.layout.Rows
+	cols := m.layout.Cols
+	if rows == 0 || cols == 0 {
+		return ""
+	}
+
+	// Collect pane widths (content-only) and heights per row.
+	colWidths := make([]int, cols)
+	rowHeights := make([]int, rows)
+	for c := 0; c < cols; c++ {
+		colWidths[c] = m.layout.Panes[c].Width
+	}
+	for r := 0; r < rows; r++ {
+		rowHeights[r] = m.layout.Panes[r*cols].Height
+	}
+
+	// Pre-render all pane contents.
+	contents := make([][]string, rows*cols) // each is lines of content
+	for r := 0; r < rows; r++ {
+		for c := 0; c < cols; c++ {
+			idx := r*cols + c
+			w := colWidths[c]
+			h := rowHeights[r]
+			rendered := m.renderPaneContent(idx, w, h)
+			lines := strings.Split(rendered, "\n")
+			// Ensure exactly h lines.
+			for len(lines) < h {
+				lines = append(lines, strings.Repeat(" ", w))
+			}
+			if len(lines) > h {
+				lines = lines[:h]
+			}
+			contents[idx] = lines
+		}
+	}
+
+	// Helper to pick border color: for a segment between panes, use the
+	// color of the focused/higher-priority adjacent pane.
+	priorityColor := func(indices ...int) lipgloss.Color {
+		best := colorEmpty
+		bestPriority := -1
+		for _, idx := range indices {
+			if idx < 0 || idx >= len(m.panes) {
+				continue
+			}
+			c := m.paneColor(idx)
+			p := 0
+			switch c {
+			case colorFocused:
+				p = 4
+			case colorBroadcast:
+				p = 3
+			case colorReconnecting:
+				p = 2
+			case colorDisconnected:
+				p = 1
+			case colorInactive:
+				p = 0
+			}
+			if p > bestPriority {
+				bestPriority = p
+				best = c
+			}
+		}
+		if bestPriority < 0 {
+			return colorInactive
+		}
+		return best
+	}
+
+	// styled renders text with the given color.
+	styled := func(color lipgloss.Color, text string) string {
+		return lipgloss.NewStyle().Foreground(color).Render(text)
+	}
+
+	var sb strings.Builder
+
+	// ── Top border row ───────────────────────────────────────────────────
+	{
+		topLeft := priorityColor(0)
+		sb.WriteString(styled(topLeft, "╭"))
+		for c := 0; c < cols; c++ {
+			idx := c // top-row pane
+			color := priorityColor(idx)
+			sb.WriteString(styled(color, strings.Repeat("─", colWidths[c])))
+			if c < cols-1 {
+				// Junction between top-row panes
+				jColor := priorityColor(idx, idx+1)
+				sb.WriteString(styled(jColor, "┬"))
+			}
+		}
+		topRight := priorityColor(cols - 1)
+		sb.WriteString(styled(topRight, "╮"))
+		sb.WriteString("\n")
+	}
+
+	// ── Content rows + divider rows ──────────────────────────────────────
+	for r := 0; r < rows; r++ {
+		// Content lines for this row of panes.
+		h := rowHeights[r]
+		for line := 0; line < h; line++ {
+			for c := 0; c < cols; c++ {
+				idx := r*cols + c
+				// Left border or divider
+				if c == 0 {
+					color := priorityColor(idx)
+					sb.WriteString(styled(color, "│"))
+				}
+				// Pane content line
+				contentLine := contents[idx][line]
+				sb.WriteString(contentLine)
+				// Right divider or border
+				if c < cols-1 {
+					divColor := priorityColor(idx, idx+1)
+					sb.WriteString(styled(divColor, "│"))
+				} else {
+					color := priorityColor(idx)
+					sb.WriteString(styled(color, "│"))
+				}
+			}
+			sb.WriteString("\n")
+		}
+
+		// Horizontal divider row (between grid rows, not after last row).
+		if r < rows-1 {
+			// Left junction
+			topIdx := r * cols
+			botIdx := (r + 1) * cols
+			leftColor := priorityColor(topIdx, botIdx)
+			sb.WriteString(styled(leftColor, "├"))
+			for c := 0; c < cols; c++ {
+				tIdx := r*cols + c
+				bIdx := (r+1)*cols + c
+				color := priorityColor(tIdx, bIdx)
+				sb.WriteString(styled(color, strings.Repeat("─", colWidths[c])))
+				if c < cols-1 {
+					// Cross junction: adjacent to 4 panes
+					jColor := priorityColor(tIdx, tIdx+1, bIdx, bIdx+1)
+					sb.WriteString(styled(jColor, "┼"))
+				}
+			}
+			rightColor := priorityColor(r*cols+cols-1, (r+1)*cols+cols-1)
+			sb.WriteString(styled(rightColor, "┤"))
+			sb.WriteString("\n")
+		}
+	}
+
+	// ── Bottom border row ────────────────────────────────────────────────
+	{
+		lastRow := rows - 1
+		botLeft := priorityColor(lastRow * cols)
+		sb.WriteString(styled(botLeft, "╰"))
+		for c := 0; c < cols; c++ {
+			idx := lastRow*cols + c
+			color := priorityColor(idx)
+			sb.WriteString(styled(color, strings.Repeat("─", colWidths[c])))
+			if c < cols-1 {
+				jColor := priorityColor(idx, idx+1)
+				sb.WriteString(styled(jColor, "┴"))
+			}
+		}
+		botRight := priorityColor(lastRow*cols + cols - 1)
+		sb.WriteString(styled(botRight, "╯"))
+	}
+
+	return sb.String()
 }
 
 func (m Model) paneColor(idx int) lipgloss.Color {

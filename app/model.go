@@ -6,6 +6,14 @@ import (
 	"github.com/xssh/xssh/pane"
 )
 
+// BorderMode controls how adjacent pane borders are rendered.
+type BorderMode int
+
+const (
+	BorderShared BorderMode = iota // default: shared single-line dividers
+	BorderFull                     // independent borders per pane
+)
+
 // FocusTarget describes which UI element currently receives keyboard input.
 type FocusTarget int
 
@@ -39,6 +47,9 @@ type Model struct {
 	// zoomedPane: -1 = no zoom; ≥0 = index of the full-screen pane.
 	zoomedPane int
 
+	// borderMode controls shared vs independent pane borders.
+	borderMode BorderMode
+
 	// Broadcast
 	broadcastTo []bool // len = len(panes); true = include in broadcast
 	inputBar    textinput.Model
@@ -65,7 +76,7 @@ type Model struct {
 }
 
 // NewModel constructs an initial Model with no panes.
-func NewModel() Model {
+func NewModel(borderMode BorderMode) Model {
 	input := textinput.New()
 	input.Placeholder = "broadcast input…"
 
@@ -78,6 +89,7 @@ func NewModel() Model {
 		focusedPane:       -1,
 		zoomedPane:        -1,
 		focusTarget:       FocusBroadcast,
+		borderMode:        borderMode,
 		inputBar:          input,
 		addPaneInput:      addInput,
 		passwordInputs:    make(map[int]textinput.Model),
@@ -85,6 +97,16 @@ func NewModel() Model {
 		searchResults:     make(map[int][]int),
 		searchCursor:      make(map[int]int),
 	}
+}
+
+// paneContentSize returns the content width and height for a pane rect,
+// accounting for border mode. In shared mode, rect dimensions are already
+// content-only. In full mode, subtract 2*borderWidth for each border.
+func (m Model) paneContentSize(rect layout.PaneRect) (int, int) {
+	if m.borderMode == BorderShared {
+		return max(1, rect.Width), max(1, rect.Height)
+	}
+	return max(1, rect.Width-2*borderWidth), max(1, rect.Height-2*borderWidth)
 }
 
 // ActivePanes returns the slice of non-closed panes.
