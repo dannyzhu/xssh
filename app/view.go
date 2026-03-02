@@ -16,7 +16,7 @@ var (
 	colorInactive      = lipgloss.Color("#555555")
 	colorDisconnected  = lipgloss.Color("#FF4444")
 	colorReconnecting  = lipgloss.Color("#FFB347")
-	colorBroadcast     = lipgloss.Color("#FF6B6B")
+	colorBroadcast     = lipgloss.Color("#00CC66")
 	colorStatusBar     = lipgloss.Color("#222222")
 	colorStatusText    = lipgloss.Color("#AAAAAA")
 	colorEmpty         = lipgloss.Color("#333333")
