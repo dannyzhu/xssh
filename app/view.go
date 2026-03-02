@@ -355,21 +355,21 @@ func (m Model) renderPanesSectionShared() string {
 	}
 
 	// ── Bottom border row ────────────────────────────────────────────────
+	// In shared mode this doubles as the input bar's top border, so use
+	// ├/┴/┤ (divider) instead of ╰/┴/╯ (closing).
 	{
 		lastRow := rows - 1
 		botLeft := priorityColor(lastRow * cols)
-		sb.WriteString(styled(botLeft, "╰"))
+		sb.WriteString(styled(botLeft, "├"))
+		totalInner := 0
 		for c := 0; c < cols; c++ {
-			idx := lastRow*cols + c
-			color := priorityColor(idx)
-			sb.WriteString(styled(color, strings.Repeat("─", colWidths[c])))
-			if c < cols-1 {
-				jColor := priorityColor(idx, idx+1)
-				sb.WriteString(styled(jColor, "┴"))
-			}
+			totalInner += colWidths[c]
 		}
+		totalInner += cols - 1 // divider junctions
+		color := priorityColor(lastRow * cols)
+		sb.WriteString(styled(color, strings.Repeat("─", totalInner)))
 		botRight := priorityColor(lastRow*cols + cols - 1)
-		sb.WriteString(styled(botRight, "╯"))
+		sb.WriteString(styled(botRight, "┤"))
 	}
 
 	return sb.String()
@@ -517,7 +517,19 @@ func (m Model) renderInputBar() string {
 		}
 	}
 
-	// Border colour reflects active state
+	content := innerStyle.Render(line0) + "\n" + innerStyle.Render(line1)
+
+	// Shared mode: no border — top line is shared with the pane grid's bottom.
+	if m.borderMode == BorderShared {
+		// Render with left/right padding matching the border columns (│ chars).
+		return lipgloss.NewStyle().
+			Background(lipgloss.Color("#111111")).
+			Width(innerW).
+			PaddingLeft(1).
+			Render(content)
+	}
+
+	// Full mode: independent rounded border.
 	borderColor := colorInactive
 	switch m.focusTarget {
 	case FocusBroadcast, FocusBroadcastSelect:
@@ -525,8 +537,6 @@ func (m Model) renderInputBar() string {
 	case FocusAddPane:
 		borderColor = colorFocused
 	}
-
-	content := innerStyle.Render(line0) + "\n" + innerStyle.Render(line1)
 
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -563,7 +573,7 @@ func (m Model) renderBroadcastSelectList() string {
 
 func (m Model) renderZoomed() string {
 	p := m.panes[m.zoomedPane]
-	contentH := m.height - reservedHeight
+	contentH := m.height - m.reservedHeight()
 	contentW := m.width - 2
 
 	var content string

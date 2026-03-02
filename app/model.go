@@ -99,6 +99,19 @@ func NewModel(borderMode BorderMode) Model {
 	}
 }
 
+// inputBarHeight returns the total rows used by the input bar.
+func (m Model) inputBarHeight() int {
+	if m.borderMode == BorderShared {
+		return inputBarHeightShared
+	}
+	return inputBarHeightFull
+}
+
+// reservedHeight returns the total rows reserved for chrome (status + input).
+func (m Model) reservedHeight() int {
+	return statusBarHeight + m.inputBarHeight()
+}
+
 // paneContentSize returns the content width and height for a pane rect,
 // accounting for border mode. In shared mode, rect dimensions are already
 // content-only. In full mode, subtract 2*borderWidth for each border.

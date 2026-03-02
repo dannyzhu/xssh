@@ -14,14 +14,14 @@ import (
 )
 
 const (
-	defaultRows        = 24
-	defaultCols        = 80
-	borderWidth        = 1 // border on each side
-	statusBarHeight    = 1
-	inputBarHeight     = 4 // 2 content lines + top/bottom border
-	reservedHeight     = statusBarHeight + inputBarHeight
-	maxReconnectTries  = 3
-	reconnectInterval  = 5 * time.Second
+	defaultRows           = 24
+	defaultCols           = 80
+	borderWidth           = 1 // border on each side
+	statusBarHeight       = 1
+	inputBarHeightFull    = 4 // 2 content lines + top/bottom border
+	inputBarHeightShared  = 2 // 2 content lines only (top border shared with grid, no sides/bottom)
+	maxReconnectTries     = 3
+	reconnectInterval     = 5 * time.Second
 )
 
 // New builds a Model from a list of target strings and connects each session.
@@ -37,7 +37,7 @@ func New(targets []string, borderMode BorderMode) (Model, error) {
 	m := NewModel(borderMode)
 
 	// Compute an initial layout at a placeholder size; real size comes from WindowSizeMsg.
-	m.layout = layout.Compute(len(targets), defaultCols, defaultRows+reservedHeight, reservedHeight, borderMode == BorderShared)
+	m.layout = layout.Compute(len(targets), defaultCols, defaultRows+m.reservedHeight(), m.reservedHeight(), borderMode == BorderShared)
 	total := m.layout.Rows * m.layout.Cols
 
 	m.panes = make([]*pane.Pane, total)

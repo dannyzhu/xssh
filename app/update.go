@@ -27,7 +27,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.ready = true
-		m.layout = layout.Compute(len(m.ActivePanes()), msg.Width, msg.Height, reservedHeight, m.borderMode == BorderShared)
+		m.layout = layout.Compute(len(m.ActivePanes()), msg.Width, msg.Height, m.reservedHeight(), m.borderMode == BorderShared)
 		m = m.resizePanes()
 
 	// ── Pane output ──────────────────────────────────────────────────────────
@@ -611,7 +611,7 @@ func keyBytes(key string) []byte {
 // activates the input bar when the user clicks the bottom chrome area.
 func (m *Model) handleMouseClick(x, y int) {
 	// Click in the input bar area → focus broadcast input bar
-	inputBarTop := m.height - inputBarHeight
+	inputBarTop := m.height - m.inputBarHeight()
 	if y >= inputBarTop {
 		if m.focusTarget == FocusPane {
 			m.focusTarget = FocusBroadcast
