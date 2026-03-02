@@ -613,19 +613,16 @@ func keyBytes(key string) []byte {
 }
 
 // feedScrollBuffer captures newly rendered VTerm rows and adds them to the
-// pane's ScrollBuffer. It compares cursor row before/after the write to
-// determine which rows were newly output.
+// pane's ScrollBuffer. Only rows the cursor moved through are captured;
+// when the cursor moves up (clear / vim / readline) nothing is added to
+// avoid dumping duplicate or irrelevant screen content.
 func feedScrollBuffer(p *pane.Pane, rowBefore, rowAfter, totalRows int) {
 	if rowAfter < rowBefore {
-		// Scroll happened — capture all visible rows (simple approach)
-		rows, cols := p.VTerm.Size()
-		for r := 0; r < rows; r++ {
-			line := renderRowPlain(p, r, cols)
-			p.Scroll.AddLine(line)
-		}
+		// Cursor moved up (clear, full-screen app, readline edit).
+		// Do not dump the visible screen — that would add duplicate lines.
 		return
 	}
-	// Capture rows from rowBefore to rowAfter (inclusive)
+	// Capture rows from rowBefore to rowAfter (inclusive).
 	_, cols := p.VTerm.Size()
 	for r := rowBefore; r <= rowAfter && r < totalRows; r++ {
 		line := renderRowPlain(p, r, cols)
