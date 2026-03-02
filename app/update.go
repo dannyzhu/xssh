@@ -110,6 +110,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		}
 	}
 
+	// ── Help overlay ─────────────────────────────────────────────────────────
+	if m.showHelp {
+		m.showHelp = false
+		return nil
+	}
+
 	// ── Broadcast select mode ────────────────────────────────────────────────
 	if m.focusTarget == FocusBroadcastSelect {
 		return m.handleBroadcastSelectKey(key)
@@ -123,12 +129,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 	// ── Add-pane overlay ─────────────────────────────────────────────────────
 	if m.focusTarget == FocusAddPane {
 		return m.handleAddPaneKey(key)
-	}
-
-	// ── Help overlay ─────────────────────────────────────────────────────────
-	if m.showHelp {
-		m.showHelp = false
-		return nil
 	}
 
 	// ── Scroll / search modes ────────────────────────────────────────────────
@@ -610,6 +610,18 @@ func keyBytes(key string) []byte {
 // handleMouseClick focuses the pane at terminal coordinate (x, y), or
 // activates the input bar when the user clicks the bottom chrome area.
 func (m *Model) handleMouseClick(x, y int) {
+	// Click in the input bar area → enter broadcast mode
+	inputBarTop := m.height - m.inputBarHeight()
+	if y >= inputBarTop {
+		if m.focusTarget == FocusPane {
+			m.focusTarget = FocusBroadcast
+			for i, p := range m.panes {
+				m.broadcastTo[i] = !p.Closed
+			}
+		}
+		return
+	}
+
 	// Click in a pane — find which one
 	for i, rect := range m.layout.Panes {
 		if i >= len(m.panes) || m.panes[i].Closed {

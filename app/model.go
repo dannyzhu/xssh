@@ -82,7 +82,7 @@ func NewModel(borderMode BorderMode) Model {
 	return Model{
 		focusedPane:       -1,
 		zoomedPane:        -1,
-		focusTarget:       FocusPane,
+		focusTarget:       FocusBroadcast,
 		borderMode:        borderMode,
 		addPaneInput:      addInput,
 		passwordInputs:    make(map[int]textinput.Model),
