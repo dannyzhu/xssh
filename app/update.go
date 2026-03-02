@@ -36,6 +36,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			p := m.panes[msg.PaneID]
 			p.VTerm.Write(msg.Data)
 			p.Scroll.AppendRaw(msg.Data)
+			// New output arrives — exit scroll mode so cursor is visible
+			if p.Mode == pane.ModeScroll || p.Mode == pane.ModeSearch {
+				p.Mode = pane.ModeNormal
+				p.Scroll.ToBottom()
+			}
 			// Keep listening
 			if p.Session != nil {
 				cmds = append(cmds, listenPane(msg.PaneID, p.Session.Output()))
