@@ -58,9 +58,10 @@ func (b *ScrollBuffer) detectScroll(newPlain []string) int {
 	}
 	// The top row changed — try to find a shift amount such that
 	// newPlain[0..minMatch) == prevPlain[shift..shift+minMatch).
-	// Requiring multiple consecutive rows to match avoids false positives
-	// from repeated prompt lines or blank rows.
-	minMatch := 3
+	// Combined with the top-row-must-change guard above, a 2-row
+	// consecutive match is sufficient to avoid false positives while
+	// still detecting scroll when new content appears below.
+	minMatch := 2
 	if minMatch > len(newPlain) {
 		minMatch = len(newPlain)
 	}
