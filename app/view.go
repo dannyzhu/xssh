@@ -529,19 +529,10 @@ func (m Model) renderInputBar() string {
 	}
 
 	if m.borderMode == BorderShared {
-		// Left/right/bottom border only — top is shared with the pane grid.
-		noTopBorder := lipgloss.Border{
-			Top:         "",
-			Bottom:      "─",
-			Left:        "│",
-			Right:       "│",
-			TopLeft:     "",
-			TopRight:    "",
-			BottomLeft:  "╰",
-			BottomRight: "╯",
-		}
+		// Left/right/bottom only — top is shared with the pane grid's ├──┴──┤.
 		return lipgloss.NewStyle().
-			Border(noTopBorder).
+			Border(lipgloss.RoundedBorder()).
+			BorderTop(false).
 			BorderForeground(borderColor).
 			Background(lipgloss.Color("#111111")).
 			Width(contentW).
