@@ -96,6 +96,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
 			m.handleMouseClick(msg.X, msg.Y)
 		}
+		if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
+			m.handleMouseScroll(msg.X, msg.Y, msg.Button == tea.MouseButtonWheelUp)
+		}
 	}
 
 	return m, tea.Batch(cmds...)
@@ -673,6 +676,33 @@ func (m *Model) handleMouseClick(x, y int) {
 			m.focusedPane = i
 			m.focusTarget = FocusPane
 			m.prefixState = PrefixIdle
+			return
+		}
+	}
+}
+
+// handleMouseScroll scrolls the pane under (x, y) up or down by 3 lines.
+// If the pane is not already in scroll mode it is switched into it first.
+func (m *Model) handleMouseScroll(x, y int, up bool) {
+	// Find which pane the cursor is over
+	for i, rect := range m.layout.Panes {
+		if i >= len(m.panes) || m.panes[i].Closed {
+			continue
+		}
+		if x >= rect.X && x < rect.X+rect.Width &&
+			y >= rect.Y && y < rect.Y+rect.Height {
+			p := m.panes[i]
+			if p.Mode == pane.ModeNormal {
+				p.Mode = pane.ModeScroll
+			}
+			if up {
+				p.Scroll.ScrollUp(3)
+			} else {
+				p.Scroll.ScrollDown(3)
+				if p.Scroll.IsAtBottom() {
+					p.Mode = pane.ModeNormal
+				}
+			}
 			return
 		}
 	}
