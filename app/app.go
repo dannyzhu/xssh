@@ -19,7 +19,7 @@ const (
 	borderWidth           = 1 // border on each side
 	statusBarHeight       = 1
 	inputBarHeightFull    = 4 // 2 content lines + top/bottom border
-	inputBarHeightShared  = 2 // 2 content lines only (top border shared with grid, no sides/bottom)
+	inputBarHeightShared  = 3 // 2 content lines + bottom border (top shared with grid)
 	maxReconnectTries     = 3
 	reconnectInterval     = 5 * time.Second
 )

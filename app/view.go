@@ -475,15 +475,7 @@ func (m Model) renderPasswordOverlay(paneID, w, h int) string {
 // ── Input bar ─────────────────────────────────────────────────────────────────
 
 func (m Model) renderInputBar() string {
-	// In shared mode there's no border box, just content with left padding.
-	// In full mode, the border adds 1 char each side.
-	shared := m.borderMode == BorderShared
-	var contentW int
-	if shared {
-		contentW = m.width - 2 // left padding (1) + right margin (1)
-	} else {
-		contentW = m.width - 4 // border (1) + padding (1) on each side
-	}
+	contentW := m.width - 4 // border (1) + padding (1) on each side
 
 	innerStyle := lipgloss.NewStyle().
 		Width(contentW).
@@ -528,12 +520,6 @@ func (m Model) renderInputBar() string {
 
 	content := innerStyle.Render(line0) + "\n" + innerStyle.Render(line1)
 
-	if shared {
-		// No border — just pad left by 1 to align with pane content.
-		return " " + content
-	}
-
-	// Full mode: independent rounded border.
 	borderColor := colorInactive
 	switch m.focusTarget {
 	case FocusBroadcast, FocusBroadcastSelect:
@@ -542,11 +528,32 @@ func (m Model) renderInputBar() string {
 		borderColor = colorFocused
 	}
 
+	if m.borderMode == BorderShared {
+		// Left/right/bottom border only — top is shared with the pane grid.
+		noTopBorder := lipgloss.Border{
+			Top:         "",
+			Bottom:      "─",
+			Left:        "│",
+			Right:       "│",
+			TopLeft:     "",
+			TopRight:    "",
+			BottomLeft:  "╰",
+			BottomRight: "╯",
+		}
+		return lipgloss.NewStyle().
+			Border(noTopBorder).
+			BorderForeground(borderColor).
+			Background(lipgloss.Color("#111111")).
+			Width(contentW).
+			Padding(0, 1).
+			Render(content)
+	}
+
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderColor).
 		Background(lipgloss.Color("#111111")).
-		Width(m.width - 2).
+		Width(contentW).
 		Padding(0, 1).
 		Render(content)
 }
