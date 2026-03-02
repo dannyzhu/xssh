@@ -2,17 +2,32 @@ package session
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
+	ssh_config "github.com/kevinburke/ssh_config"
 	"github.com/xssh/xssh/config"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
+
+var debugLogger = func() *log.Logger {
+	f, err := os.OpenFile("/tmp/xssh-debug.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		return log.New(os.Stderr, "xssh: ", 0)
+	}
+	return log.New(f, "", log.LstdFlags)
+}()
+
+func debugLog(format string, args ...any) {
+	debugLogger.Printf(format, args...)
+}
 
 // SSHSession manages an SSH connection to a remote host.
 type SSHSession struct {
@@ -49,9 +64,15 @@ func NewSSH(entry *config.HostEntry, pwReply <-chan string) *SSHSession {
 }
 
 func (s *SSHSession) Connect() error {
+	// Reset output channel so reconnect attempts don't write to a closed channel.
+	s.mu.Lock()
+	s.outCh = make(chan []byte, 256)
+	s.mu.Unlock()
+
 	cfg, err := s.buildClientConfig()
 	if err != nil {
 		s.setStatus(StatusDisconnected)
+		debugLog("build config for %s: %v", s.title, err)
 		return fmt.Errorf("build config: %w", err)
 	}
 
@@ -65,12 +86,14 @@ func (s *SSHSession) Connect() error {
 	}
 	if err != nil {
 		s.setStatus(StatusDisconnected)
+		debugLog("dial %s: %v", addr, err)
 		return fmt.Errorf("dial %s: %w", addr, err)
 	}
 
 	sshConn, chans, reqs, err := ssh.NewClientConn(conn, addr, cfg)
 	if err != nil {
 		conn.Close()
+		debugLog("handshake %s: %v", addr, err)
 		if isAuthErr(err) {
 			s.setStatus(StatusAuthFailed)
 		} else {
@@ -249,11 +272,11 @@ func (s *SSHSession) buildClientConfig() (*ssh.ClientConfig, error) {
 		}))
 	}
 
-	// Known hosts
-	knownHostsFile := filepath.Join(os.Getenv("HOME"), ".ssh", "known_hosts")
+	// Known hosts — collect all files listed in UserKnownHostsFile for this
+	// alias, falling back to the two default locations OpenSSH uses.
 	hostKeyCallback := ssh.InsecureIgnoreHostKey()
-	if _, err := os.Stat(knownHostsFile); err == nil {
-		if cb, err := knownhosts.New(knownHostsFile); err == nil {
+	if files := knownHostsFiles(s.entry.Alias); len(files) > 0 {
+		if cb, err := knownhosts.New(files...); err == nil {
 			hostKeyCallback = cb
 		}
 	}
@@ -293,6 +316,51 @@ func (s *SSHSession) setStatus(st Status) {
 	s.mu.Lock()
 	s.status = st
 	s.mu.Unlock()
+}
+
+// knownHostsFiles returns the list of existing known_hosts files to check for
+// the given SSH alias. It reads UserKnownHostsFile from ssh_config (which may
+// list multiple space-separated paths), then falls back to the two locations
+// OpenSSH checks by default: ~/.ssh/known_hosts and ~/.ssh/known_hosts2.
+func knownHostsFiles(alias string) []string {
+	home, _ := os.UserHomeDir()
+
+	// Collect candidate paths from ssh_config UserKnownHostsFile setting.
+	var candidates []string
+	if raw := ssh_config.Get(alias, "UserKnownHostsFile"); raw != "" {
+		for _, p := range strings.Fields(raw) {
+			candidates = append(candidates, expandHomePath(p, home))
+		}
+	}
+	// Always add the two OpenSSH defaults if not already present.
+	defaults := []string{
+		filepath.Join(home, ".ssh", "known_hosts"),
+		filepath.Join(home, ".ssh", "known_hosts2"),
+	}
+	inList := make(map[string]bool)
+	for _, p := range candidates {
+		inList[p] = true
+	}
+	for _, p := range defaults {
+		if !inList[p] {
+			candidates = append(candidates, p)
+		}
+	}
+	// Filter to files that actually exist.
+	var existing []string
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			existing = append(existing, p)
+		}
+	}
+	return existing
+}
+
+func expandHomePath(p, home string) string {
+	if strings.HasPrefix(p, "~/") {
+		return filepath.Join(home, p[2:])
+	}
+	return p
 }
 
 func isAuthErr(err error) bool {

@@ -277,50 +277,67 @@ func (m Model) renderPasswordOverlay(paneID, w, h int) string {
 // ── Input bar ─────────────────────────────────────────────────────────────────
 
 func (m Model) renderInputBar() string {
-	style := lipgloss.NewStyle().
-		Width(m.width).
+	innerW := m.width - 2 // width inside the border (border adds 1 char each side)
+
+	innerStyle := lipgloss.NewStyle().
+		Width(innerW).
 		Background(lipgloss.Color("#111111")).
 		Foreground(lipgloss.Color("#CCCCCC")).
 		Padding(0, 1)
 
-	var lines [2]string
+	var line0, line1 string
 
 	switch m.focusTarget {
 	case FocusBroadcast:
-		lines[0] = lipgloss.NewStyle().Foreground(colorBroadcast).Render("BROADCAST") +
+		line0 = lipgloss.NewStyle().Foreground(colorBroadcast).Render("BROADCAST") +
 			"  " + m.inputBar.View()
-		lines[1] = lipgloss.NewStyle().Foreground(colorInactive).
+		line1 = lipgloss.NewStyle().Foreground(colorInactive).
 			Render("Enter: send  Esc: cancel  Ctrl+\\+m: select panes")
 	case FocusBroadcastSelect:
-		lines[0] = m.renderBroadcastSelectList()
-		lines[1] = lipgloss.NewStyle().Foreground(colorInactive).
+		line0 = m.renderBroadcastSelectList()
+		line1 = lipgloss.NewStyle().Foreground(colorInactive).
 			Render("Space: toggle  Ctrl+A: all  Enter/Esc: confirm")
 	case FocusAddPane:
-		lines[0] = lipgloss.NewStyle().Foreground(colorFocused).Render("Add pane: ") +
+		line0 = lipgloss.NewStyle().Foreground(colorFocused).Render("Add pane: ") +
 			m.addPaneInput.View()
-		lines[1] = lipgloss.NewStyle().Foreground(colorInactive).
+		line1 = lipgloss.NewStyle().Foreground(colorInactive).
 			Render("Enter: connect  Esc: cancel")
 	default:
 		if m.focusedPane >= 0 && m.focusedPane < len(m.panes) {
 			p := m.panes[m.focusedPane]
 			if p.Mode == pane.ModeScroll {
-				lines[0] = lipgloss.NewStyle().Foreground(colorFocused).Render("SCROLL MODE")
-				lines[1] = lipgloss.NewStyle().Foreground(colorInactive).
+				line0 = lipgloss.NewStyle().Foreground(colorFocused).Render("SCROLL MODE")
+				line1 = lipgloss.NewStyle().Foreground(colorInactive).
 					Render("↑/k ↓/j PgUp PgDn g/G: top/bottom  /: search  q/Esc: exit")
 			} else if p.Mode == pane.ModeSearch {
-				lines[0] = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF00")).
+				line0 = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF00")).
 					Render("SEARCH: " + p.SearchQuery)
-				lines[1] = lipgloss.NewStyle().Foreground(colorInactive).
+				line1 = lipgloss.NewStyle().Foreground(colorInactive).
 					Render("n/N: next/prev  Esc: back to scroll")
 			} else {
-				lines[0] = lipgloss.NewStyle().Foreground(colorInactive).
+				line0 = lipgloss.NewStyle().Foreground(colorInactive).
 					Render("Ctrl+\\: prefix  ?help  b:broadcast  [: scroll  z: zoom")
-				lines[1] = ""
 			}
 		}
 	}
 
-	return style.Render(lines[0] + "\n" + lines[1])
+	// Border colour reflects active state
+	borderColor := colorInactive
+	switch m.focusTarget {
+	case FocusBroadcast, FocusBroadcastSelect:
+		borderColor = colorBroadcast
+	case FocusAddPane:
+		borderColor = colorFocused
+	}
+
+	content := innerStyle.Render(line0) + "\n" + innerStyle.Render(line1)
+
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor).
+		Background(lipgloss.Color("#111111")).
+		Width(innerW).
+		Render(content)
 }
 
 func (m Model) renderBroadcastSelectList() string {

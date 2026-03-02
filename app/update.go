@@ -27,7 +27,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.ready = true
-		m.layout = layout.Compute(len(m.ActivePanes()), msg.Width, msg.Height)
+		m.layout = layout.Compute(len(m.ActivePanes()), msg.Width, msg.Height, reservedHeight)
 		m = m.resizePanes()
 
 	// ── Pane output ──────────────────────────────────────────────────────────
@@ -64,23 +64,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					p.Session.Resize(contentH, contentW) //nolint:errcheck
 				}
 			case session.StatusDisconnected:
-				// Schedule auto-reconnect if attempts remain
-				attempt := m.reconnectAttempts[msg.PaneID]
-				if attempt < maxReconnectTries && p.Session != nil && !p.Closed {
-					m.reconnectAttempts[msg.PaneID] = attempt + 1
-					cmds = append(cmds, reconnectAfter(msg.PaneID, attempt+1, reconnectInterval))
+				// Shell exited or SSH dropped — close the pane (grey blank slot).
+				p.Closed = true
+				p.Session = nil
+				if m.focusedPane == msg.PaneID {
+					m.focusToNextActive()
 				}
-			}
-		}
-
-	// ── Auto-reconnect tick ──────────────────────────────────────────────────
-	case ReconnectTickMsg:
-		if msg.PaneID >= 0 && msg.PaneID < len(m.panes) {
-			p := m.panes[msg.PaneID]
-			if !p.Closed && p.Session != nil &&
-				p.Session.Status() == session.StatusDisconnected {
-				// Rebuild output channel by reconnecting
-				cmds = append(cmds, connectPane(msg.PaneID, p))
+				// All panes gone — exit the application.
+				if len(m.ActivePanes()) == 0 {
+					cmds = append(cmds, tea.Quit)
+				}
 			}
 		}
 
@@ -96,6 +89,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd := m.handleKey(msg)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
+		}
+
+	// ── Mouse input ──────────────────────────────────────────────────────────
+	case tea.MouseMsg:
+		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
+			m.handleMouseClick(msg.X, msg.Y)
 		}
 	}
 
@@ -293,10 +292,8 @@ func (m *Model) handleBroadcastKey(key string) tea.Cmd {
 		return nil
 	case "enter":
 		text := m.inputBar.Value()
-		if text != "" {
-			m.sendBroadcast([]byte(text + "\n"))
-			m.inputBar.SetValue("")
-		}
+		m.sendBroadcast([]byte(text + "\r"))
+		m.inputBar.SetValue("")
 		return nil
 	}
 	var cmd tea.Cmd
@@ -472,6 +469,24 @@ func (m *Model) sendBroadcast(data []byte) {
 }
 
 // moveFocus moves the focusedPane index by delta (wraps on grid boundaries).
+// focusToNextActive moves focus to the first non-closed pane, searching
+// forward then backward from the current position.
+func (m *Model) focusToNextActive() {
+	for i := m.focusedPane + 1; i < len(m.panes); i++ {
+		if !m.panes[i].Closed {
+			m.focusedPane = i
+			return
+		}
+	}
+	for i := m.focusedPane - 1; i >= 0; i-- {
+		if !m.panes[i].Closed {
+			m.focusedPane = i
+			return
+		}
+	}
+	m.focusedPane = -1 // no active panes left
+}
+
 func (m *Model) moveFocus(delta, _ int) {
 	if len(m.panes) == 0 {
 		return
@@ -633,6 +648,34 @@ func renderRowPlain(p *pane.Pane, row, cols int) string {
 		i--
 	}
 	return line[:i]
+}
+
+// handleMouseClick focuses the pane at terminal coordinate (x, y), or
+// activates the input bar when the user clicks the bottom chrome area.
+func (m *Model) handleMouseClick(x, y int) {
+	// Click in the input bar area → focus broadcast input bar
+	inputBarTop := m.height - inputBarHeight
+	if y >= inputBarTop {
+		if m.focusTarget == FocusPane {
+			m.focusTarget = FocusBroadcast
+			m.inputBar.Focus()
+		}
+		return
+	}
+
+	// Click in a pane — find which one
+	for i, rect := range m.layout.Panes {
+		if i >= len(m.panes) || m.panes[i].Closed {
+			continue
+		}
+		if x >= rect.X && x < rect.X+rect.Width &&
+			y >= rect.Y && y < rect.Y+rect.Height {
+			m.focusedPane = i
+			m.focusTarget = FocusPane
+			m.prefixState = PrefixIdle
+			return
+		}
+	}
 }
 
 // Ensure time import is used

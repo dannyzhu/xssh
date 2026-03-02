@@ -28,9 +28,9 @@ var layoutTable = [10][2]int{
 }
 
 // Compute calculates pane rectangles for n active panes inside a terminal
-// of (termWidth × termHeight) characters. The top 1 line is reserved for
-// the status bar and the bottom 2 lines for the input bar.
-func Compute(n, termWidth, termHeight int) Layout {
+// of (termWidth × termHeight) characters. reservedRows is the total number
+// of terminal rows consumed by chrome (status bar + input bar).
+func Compute(n, termWidth, termHeight, reservedRows int) Layout {
 	if n < 1 {
 		n = 1
 	}
@@ -41,7 +41,7 @@ func Compute(n, termWidth, termHeight int) Layout {
 	rows, cols := rc[0], rc[1]
 	total := rows * cols
 
-	contentHeight := termHeight - 3 // -1 status bar, -2 input bar
+	contentHeight := termHeight - reservedRows
 
 	paneH := contentHeight / rows
 	paneW := termWidth / cols

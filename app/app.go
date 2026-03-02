@@ -18,7 +18,7 @@ const (
 	defaultCols        = 80
 	borderWidth        = 1 // border on each side
 	statusBarHeight    = 1
-	inputBarHeight     = 2
+	inputBarHeight     = 4 // 2 content lines + top/bottom border
 	reservedHeight     = statusBarHeight + inputBarHeight
 	maxReconnectTries  = 3
 	reconnectInterval  = 5 * time.Second
@@ -37,7 +37,7 @@ func New(targets []string) (Model, error) {
 	m := NewModel()
 
 	// Compute an initial layout at a placeholder size; real size comes from WindowSizeMsg.
-	m.layout = layout.Compute(len(targets), defaultCols, defaultRows+reservedHeight)
+	m.layout = layout.Compute(len(targets), defaultCols, defaultRows+reservedHeight, reservedHeight)
 	total := m.layout.Rows * m.layout.Cols
 
 	m.panes = make([]*pane.Pane, total)
@@ -70,16 +70,13 @@ func New(targets []string) (Model, error) {
 }
 
 // buildSession creates the right session type for a target string.
+// SSH targets run "ssh <target>" in a local PTY so the system ssh binary
+// handles all configuration, known_hosts, proxies and auth automatically.
 func buildSession(target string) (session.Session, error) {
 	if target == "-" {
 		return session.NewLocal(), nil
 	}
-	// Resolve via SSH config or parse user@host
-	entry, err := buildHostEntry(target)
-	if err != nil {
-		return nil, err
-	}
-	return session.NewSSH(entry, nil), nil
+	return session.NewLocalCmd([]string{"ssh", target}, target), nil
 }
 
 // buildHostEntry resolves a target string to a HostEntry.
@@ -155,7 +152,7 @@ func Run(targets []string) error {
 	if err != nil {
 		return err
 	}
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err = p.Run()
 	return err
 }

@@ -9,9 +9,10 @@ import (
 	"github.com/creack/pty"
 )
 
-// LocalSession runs a local shell via PTY.
+// LocalSession runs a command (local shell or ssh) via a PTY.
 type LocalSession struct {
-	shell  string
+	args   []string // command + arguments to execute
+	title  string   // display name shown in the status bar
 	ptmx   *os.File
 	cmd    *exec.Cmd
 	status Status
@@ -19,17 +20,37 @@ type LocalSession struct {
 	mu     sync.Mutex
 }
 
-// NewLocal creates a new LocalSession using the current $SHELL.
+// NewLocal creates a LocalSession that opens $SHELL.
 func NewLocal() *LocalSession {
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/sh"
 	}
-	return &LocalSession{shell: shell, outCh: make(chan []byte, 256)}
+	return &LocalSession{
+		args:  []string{shell},
+		title: filepath.Base(shell),
+		outCh: make(chan []byte, 256),
+	}
+}
+
+// NewLocalCmd creates a LocalSession that runs an arbitrary command.
+// title is the label shown in the status bar / pane header.
+func NewLocalCmd(args []string, title string) *LocalSession {
+	return &LocalSession{
+		args:  args,
+		title: title,
+		outCh: make(chan []byte, 256),
+	}
 }
 
 func (s *LocalSession) Connect() error {
-	cmd := exec.Command(s.shell)
+	// Always create a fresh channel: the previous one may have been closed by
+	// readLoop after a disconnect, and sending to a closed channel panics.
+	s.mu.Lock()
+	s.outCh = make(chan []byte, 256)
+	s.mu.Unlock()
+
+	cmd := exec.Command(s.args[0], s.args[1:]...)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
@@ -107,5 +128,5 @@ func (s *LocalSession) Status() Status {
 }
 
 func (s *LocalSession) Title() string {
-	return filepath.Base(s.shell)
+	return s.title
 }
