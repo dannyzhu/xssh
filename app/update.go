@@ -98,6 +98,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
 			m.handleMouseScroll(msg.X, msg.Y, msg.Button == tea.MouseButtonWheelUp)
 		}
+
 	}
 
 	return m, tea.Batch(cmds...)
