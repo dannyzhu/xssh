@@ -51,13 +51,32 @@ func (b *ScrollBuffer) detectScroll(newPlain []string) int {
 	if len(newPlain) == 0 || len(b.prevPlain) == 0 {
 		return 0
 	}
-	newTop := newPlain[0]
-	// Look for newTop in the old screen, starting from row 1.
-	for i := 1; i < len(b.prevPlain); i++ {
-		if b.prevPlain[i] == newTop {
-			return i
+	// If the top row didn't change, no scrolling happened — skip.
+	// This avoids false positives from in-place edits or prompt redraws.
+	if newPlain[0] == b.prevPlain[0] {
+		return 0
+	}
+	// The top row changed — try to find a shift amount such that
+	// newPlain[0..minMatch) == prevPlain[shift..shift+minMatch).
+	// Requiring multiple consecutive rows to match avoids false positives
+	// from repeated prompt lines or blank rows.
+	minMatch := 3
+	if minMatch > len(newPlain) {
+		minMatch = len(newPlain)
+	}
+	for shift := 1; shift+minMatch <= len(b.prevPlain); shift++ {
+		match := true
+		for j := 0; j < minMatch; j++ {
+			if newPlain[j] != b.prevPlain[shift+j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return shift
 		}
 	}
+	// Top changed but no matching shift found (clear screen, full redraw).
 	return 0
 }
 
