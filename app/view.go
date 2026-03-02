@@ -475,12 +475,13 @@ func (m Model) renderPasswordOverlay(paneID, w, h int) string {
 // ── Input bar ─────────────────────────────────────────────────────────────────
 
 func (m Model) renderInputBar() string {
-	contentW := m.width - 4 // border (1) + padding (1) on each side
+	innerW := m.width - 2 // width inside the border (border adds 1 char each side)
 
 	innerStyle := lipgloss.NewStyle().
-		Width(contentW).
+		Width(innerW).
 		Background(lipgloss.Color("#111111")).
-		Foreground(lipgloss.Color("#CCCCCC"))
+		Foreground(lipgloss.Color("#CCCCCC")).
+		Padding(0, 1)
 
 	var line0, line1 string
 
@@ -535,8 +536,7 @@ func (m Model) renderInputBar() string {
 			BorderTop(false).
 			BorderForeground(borderColor).
 			Background(lipgloss.Color("#111111")).
-			Width(contentW).
-			Padding(0, 1).
+			Width(innerW).
 			Render(content)
 	}
 
@@ -544,8 +544,7 @@ func (m Model) renderInputBar() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderColor).
 		Background(lipgloss.Color("#111111")).
-		Width(contentW).
-		Padding(0, 1).
+		Width(innerW).
 		Render(content)
 }
 
