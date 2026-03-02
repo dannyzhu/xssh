@@ -72,9 +72,12 @@ func NewModel() Model {
 	addInput := textinput.New()
 	addInput.Placeholder = "user@host or ssh-alias"
 
+	input.Focus()
+
 	return Model{
 		focusedPane:       -1,
 		zoomedPane:        -1,
+		focusTarget:       FocusBroadcast,
 		inputBar:          input,
 		addPaneInput:      addInput,
 		passwordInputs:    make(map[int]textinput.Model),
