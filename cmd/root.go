@@ -18,6 +18,7 @@ type ParsedArgs struct {
 	ListGroups bool     // --list-groups
 	ListHosts  bool     // --list-hosts
 	BorderMode string   // --borders: "shared" (default) or "full"
+	Help       bool     // -h / --help
 }
 
 // parseArgs parses os.Args[1:] and returns a ParsedArgs or an error.
@@ -35,6 +36,8 @@ func parseArgs(args []string) (*ParsedArgs, error) {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
+		case arg == "-h" || arg == "--help":
+			p.Help = true
 		case arg == "--list-groups":
 			p.ListGroups = true
 		case arg == "--list-hosts":
@@ -88,6 +91,10 @@ func Execute() {
 		os.Exit(1)
 	}
 
+	if args.Help {
+		printUsage()
+		return
+	}
 	if args.ListGroups {
 		runListGroups()
 		return
@@ -197,5 +204,46 @@ func runTUI(targets []string, borderMode app.BorderMode) {
 		fmt.Fprintf(os.Stderr, "xssh: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func printUsage() {
+	fmt.Print(`xssh — multiplexed SSH terminal
+
+Usage:
+  xssh [flags] [targets...]
+
+Targets:
+  -                     Local shell
+  user@host             SSH connection
+  alias                 SSH config alias
+  (no targets)          Interactive host selector
+
+Flags:
+  -h, --help            Show this help
+  -g, --group NAME      Load a saved group
+  --save NAME targets…  Save targets as a named group
+  --list-groups         List saved groups
+  --list-hosts          List SSH config hosts
+  --borders MODE        Border style: shared (default) or full
+
+Keyboard shortcuts (inside TUI):
+  Ctrl+\ 1-9            Focus pane 1-9
+  Ctrl+\ h/j/k/l        Focus left/down/up/right
+  Ctrl+\ z              Zoom/restore current pane
+  Ctrl+\ x              Close current pane
+  Ctrl+\ r              Reconnect current pane
+  Ctrl+\ R              Reconnect all panes
+  Ctrl+\ b              Broadcast input to all panes
+  Ctrl+\ m              Select panes for broadcast
+  Ctrl+\ [              Enter scroll mode
+  Ctrl+\ e              Add a new pane
+  Ctrl+\ ?              Show help overlay
+
+Examples:
+  xssh - -              Two local shells side by side
+  xssh web1 web2 db1    Connect to three hosts
+  xssh -g production    Load the "production" group
+  xssh --borders full - -  Independent borders per pane
+`)
 }
 
