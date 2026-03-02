@@ -25,6 +25,11 @@ func (b *ScrollBuffer) ScrollUp(n int) {
 	b.offset = min(b.offset+n, len(b.lines))
 }
 
+// CanScrollUp reports whether there is history above the current view.
+func (b *ScrollBuffer) CanScrollUp(height int) bool {
+	return len(b.lines) > height && b.offset < len(b.lines)-height
+}
+
 // ScrollDown scrolls toward newer history by n lines.
 func (b *ScrollBuffer) ScrollDown(n int) {
 	b.offset = max(0, b.offset-n)

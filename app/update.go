@@ -682,9 +682,9 @@ func (m *Model) handleMouseClick(x, y int) {
 }
 
 // handleMouseScroll scrolls the pane under (x, y) up or down by 3 lines.
-// If the pane is not already in scroll mode it is switched into it first.
+// Scrolling up is only allowed when the buffer has more history than the
+// pane height (i.e. there is actually something to reveal).
 func (m *Model) handleMouseScroll(x, y int, up bool) {
-	// Find which pane the cursor is over
 	for i, rect := range m.layout.Panes {
 		if i >= len(m.panes) || m.panes[i].Closed {
 			continue
@@ -692,12 +692,20 @@ func (m *Model) handleMouseScroll(x, y int, up bool) {
 		if x >= rect.X && x < rect.X+rect.Width &&
 			y >= rect.Y && y < rect.Y+rect.Height {
 			p := m.panes[i]
-			if p.Mode == pane.ModeNormal {
-				p.Mode = pane.ModeScroll
-			}
+			h := p.Height()
 			if up {
+				// Only enter scroll mode if there is history above the live view.
+				if !p.Scroll.CanScrollUp(h) {
+					return
+				}
+				if p.Mode == pane.ModeNormal {
+					p.Mode = pane.ModeScroll
+				}
 				p.Scroll.ScrollUp(3)
 			} else {
+				if p.Mode == pane.ModeNormal {
+					return // already at bottom, nothing to do
+				}
 				p.Scroll.ScrollDown(3)
 				if p.Scroll.IsAtBottom() {
 					p.Mode = pane.ModeNormal
