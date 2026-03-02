@@ -487,10 +487,11 @@ func (m Model) renderInputBar() string {
 
 	switch m.focusTarget {
 	case FocusBroadcast:
-		line0 = lipgloss.NewStyle().Foreground(colorBroadcast).Render("BROADCAST") +
-			"  " + m.inputBar.View()
+		bc := m.BroadcastCount()
+		line0 = lipgloss.NewStyle().Foreground(colorBroadcast).
+			Render(fmt.Sprintf("BROADCAST  (%d panes)", bc))
 		line1 = lipgloss.NewStyle().Foreground(colorInactive).
-			Render("Enter: send  Esc: cancel  Ctrl+\\+m: select panes")
+			Render("Ctrl+\\+b: exit  Ctrl+\\+m: select panes  All keys forwarded")
 	case FocusBroadcastSelect:
 		line0 = m.renderBroadcastSelectList()
 		line1 = lipgloss.NewStyle().Foreground(colorInactive).
@@ -621,7 +622,7 @@ func (m Model) renderHelp() string {
   Ctrl+\ x     Close current pane
   Ctrl+\ r     Reconnect current pane
   Ctrl+\ R     Reconnect all panes
-  Ctrl+\ b     Broadcast input to all panes
+  Ctrl+\ b     Broadcast input (real-time, toggle)
   Ctrl+\ m     Select panes for broadcast
   Ctrl+\ [     Enter scroll mode
   Ctrl+\ e     Add a new pane

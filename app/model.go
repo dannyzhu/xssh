@@ -52,7 +52,6 @@ type Model struct {
 
 	// Broadcast
 	broadcastTo []bool // len = len(panes); true = include in broadcast
-	inputBar    textinput.Model
 
 	// Password overlays: one textinput per pane that needs it.
 	passwordInputs map[int]textinput.Model
@@ -77,20 +76,14 @@ type Model struct {
 
 // NewModel constructs an initial Model with no panes.
 func NewModel(borderMode BorderMode) Model {
-	input := textinput.New()
-	input.Placeholder = "broadcast input…"
-
 	addInput := textinput.New()
 	addInput.Placeholder = "user@host or ssh-alias"
-
-	input.Focus()
 
 	return Model{
 		focusedPane:       -1,
 		zoomedPane:        -1,
-		focusTarget:       FocusBroadcast,
+		focusTarget:       FocusPane,
 		borderMode:        borderMode,
-		inputBar:          input,
 		addPaneInput:      addInput,
 		passwordInputs:    make(map[int]textinput.Model),
 		reconnectAttempts: make(map[int]int),

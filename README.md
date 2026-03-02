@@ -13,7 +13,7 @@ A multiplexed SSH terminal in your terminal. Connect to multiple servers side by
 ## Features
 
 - **Up to 9 panes** — SSH sessions and local shells in an auto-arranged grid (1×1 → 3×3)
-- **Broadcast input** — Send the same command to multiple panes at once, with selective targeting
+- **Broadcast input** — Real-time keystroke forwarding to multiple panes simultaneously, with selective targeting
 - **Scroll & search** — Color-preserving scrollback buffer with regex search
 - **SSH config aware** — Fuzzy-searchable host selector reads `~/.ssh/config` aliases
 - **Session groups** — Save and load named multi-host configurations
@@ -67,7 +67,7 @@ All shortcuts use the **Ctrl+\\** prefix key, then the action key.
 | `Ctrl+\ x` | Close current pane |
 | `Ctrl+\ r` | Reconnect current pane |
 | `Ctrl+\ R` | Reconnect all panes |
-| `Ctrl+\ b` | Broadcast input to all panes |
+| `Ctrl+\ b` | Broadcast input (real-time, toggle) |
 | `Ctrl+\ m` | Select which panes receive broadcast |
 | `Ctrl+\ [` | Enter scroll mode |
 | `Ctrl+\ e` | Add a new pane |

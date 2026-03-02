@@ -233,7 +233,7 @@ Keyboard shortcuts (inside TUI):
   Ctrl+\ x              Close current pane
   Ctrl+\ r              Reconnect current pane
   Ctrl+\ R              Reconnect all panes
-  Ctrl+\ b              Broadcast input to all panes
+  Ctrl+\ b              Broadcast input (real-time, toggle)
   Ctrl+\ m              Select panes for broadcast
   Ctrl+\ [              Enter scroll mode
   Ctrl+\ e              Add a new pane

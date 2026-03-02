@@ -231,11 +231,13 @@ func (m *Model) dispatchAction(action Action, _ string) tea.Cmd {
 		return tea.Batch(cmds...)
 
 	case ActionFocusBroadcast:
-		m.focusTarget = FocusBroadcast
-		m.inputBar.Focus()
-		// Default: broadcast to all active panes
-		for i, p := range m.panes {
-			m.broadcastTo[i] = !p.Closed
+		if m.focusTarget == FocusBroadcast {
+			m.focusTarget = FocusPane
+		} else {
+			m.focusTarget = FocusBroadcast
+			for i, p := range m.panes {
+				m.broadcastTo[i] = !p.Closed
+			}
 		}
 
 	case ActionBroadcastSelect:
@@ -282,22 +284,21 @@ func (m *Model) dispatchAction(action Action, _ string) tea.Cmd {
 	return nil
 }
 
-// handleBroadcastKey handles keys while in broadcast input mode.
+// handleBroadcastKey forwards every key immediately to all broadcast targets.
 func (m *Model) handleBroadcastKey(key string) tea.Cmd {
-	switch key {
-	case "esc", "ctrl+c":
-		m.focusTarget = FocusPane
-		m.inputBar.Blur()
-		return nil
-	case "enter":
-		text := m.inputBar.Value()
-		m.sendBroadcast([]byte(text + "\r"))
-		m.inputBar.SetValue("")
+	// Ctrl+\ enters prefix mode (to exit broadcast via Ctrl+\+b, or use other shortcuts)
+	if key == KeyCtrlBackslash {
+		m.prefixState = PrefixWaiting
 		return nil
 	}
-	var cmd tea.Cmd
-	m.inputBar, cmd = m.inputBar.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune(key)}))
-	return cmd
+	if m.prefixState == PrefixWaiting {
+		m.prefixState = PrefixIdle
+		action := resolveSecondKey(key)
+		return m.dispatchAction(action, key)
+	}
+	// Forward every key immediately to all broadcast targets
+	m.sendBroadcast(keyBytes(key))
+	return nil
 }
 
 // handleBroadcastSelectKey handles keys in the pane-selection checklist.
@@ -326,7 +327,6 @@ func (m *Model) handleBroadcastSelectKey(key string) tea.Cmd {
 		}
 	case "enter", "esc":
 		m.focusTarget = FocusBroadcast
-		m.inputBar.Focus()
 	}
 	return nil
 }
@@ -610,16 +610,6 @@ func keyBytes(key string) []byte {
 // handleMouseClick focuses the pane at terminal coordinate (x, y), or
 // activates the input bar when the user clicks the bottom chrome area.
 func (m *Model) handleMouseClick(x, y int) {
-	// Click in the input bar area → focus broadcast input bar
-	inputBarTop := m.height - m.inputBarHeight()
-	if y >= inputBarTop {
-		if m.focusTarget == FocusPane {
-			m.focusTarget = FocusBroadcast
-			m.inputBar.Focus()
-		}
-		return
-	}
-
 	// Click in a pane — find which one
 	for i, rect := range m.layout.Panes {
 		if i >= len(m.panes) || m.panes[i].Closed {
