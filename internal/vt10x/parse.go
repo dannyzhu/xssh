@@ -1,5 +1,7 @@
 package vt10x
 
+import "github.com/mattn/go-runewidth"
+
 func isControlCode(c rune) bool {
 	return c < 0x20 || c == 0177
 }
@@ -23,9 +25,25 @@ func (t *State) parse(c rune) {
 		t.logln("insert mode not implemented")
 	}
 
+	w := runewidth.RuneWidth(c)
+	if w == 0 {
+		// Zero-width runes (ZWJ/variation selectors/combining marks) should
+		// not consume terminal cells. We currently ignore glyph composition
+		// but must keep cursor alignment stable.
+		return
+	}
+	if w < 0 {
+		w = 1
+	}
+
 	t.setChar(c, &t.cur.Attr, t.cur.X, t.cur.Y)
-	if t.cur.X+1 < t.cols {
-		t.moveTo(t.cur.X+1, t.cur.Y)
+	if w == 2 && t.cur.X+1 < t.cols {
+		// Mark trailing cell of a wide rune to preserve column alignment.
+		t.setChar(0, &t.cur.Attr, t.cur.X+1, t.cur.Y)
+	}
+
+	if t.cur.X+w < t.cols {
+		t.moveTo(t.cur.X+w, t.cur.Y)
 	} else {
 		t.cur.State |= cursorWrapNext
 	}

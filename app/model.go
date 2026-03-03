@@ -72,6 +72,10 @@ type Model struct {
 	// searchQuery is the active scroll-mode search string (shared via Pane.SearchQuery)
 	searchResults map[int][]int // paneID → matching line indices
 	searchCursor  map[int]int   // paneID → current result index
+
+	// hostCursorShown tracks the last host terminal cursor visibility we asked
+	// Bubble Tea to set, so we only emit hide/show commands on transitions.
+	hostCursorShown bool
 }
 
 // NewModel constructs an initial Model with no panes.

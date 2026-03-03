@@ -12,14 +12,14 @@ import (
 // ── Colours ──────────────────────────────────────────────────────────────────
 
 var (
-	colorFocused       = lipgloss.Color("#00BFFF")
-	colorInactive      = lipgloss.Color("#555555")
-	colorDisconnected  = lipgloss.Color("#FF4444")
-	colorReconnecting  = lipgloss.Color("#FFB347")
-	colorBroadcast     = lipgloss.Color("#00CC66")
-	colorStatusBar     = lipgloss.Color("#222222")
-	colorStatusText    = lipgloss.Color("#AAAAAA")
-	colorEmpty         = lipgloss.Color("#333333")
+	colorFocused      = lipgloss.Color("#00BFFF")
+	colorInactive     = lipgloss.Color("#555555")
+	colorDisconnected = lipgloss.Color("#FF4444")
+	colorReconnecting = lipgloss.Color("#FFB347")
+	colorBroadcast    = lipgloss.Color("#00CC66")
+	colorStatusBar    = lipgloss.Color("#222222")
+	colorStatusText   = lipgloss.Color("#AAAAAA")
+	colorEmpty        = lipgloss.Color("#333333")
 )
 
 // View renders the full TUI.
@@ -30,12 +30,12 @@ func (m Model) View() string {
 
 	// ── Zoom mode ────────────────────────────────────────────────────────────
 	if m.zoomedPane >= 0 && m.zoomedPane < len(m.panes) {
-		return m.renderZoomed()
+		return fitToViewport(m.renderZoomed(), m.width, m.height)
 	}
 
 	// ── Help overlay ─────────────────────────────────────────────────────────
 	if m.showHelp {
-		return m.renderHelp()
+		return fitToViewport(m.renderHelp(), m.width, m.height)
 	}
 
 	// ── Normal multi-pane layout ─────────────────────────────────────────────
@@ -43,11 +43,12 @@ func (m Model) View() string {
 	panesSection := m.renderPanesSection()
 	inputSection := m.renderInputBar()
 
-	return lipgloss.JoinVertical(lipgloss.Left,
+	view := lipgloss.JoinVertical(lipgloss.Left,
 		statusBar,
 		panesSection,
 		inputSection,
 	)
+	return fitToViewport(view, m.width, m.height)
 }
 
 // ── Status bar ───────────────────────────────────────────────────────────────
@@ -440,7 +441,7 @@ func (m Model) renderScrollContent(p *pane.Pane, w, h int) string {
 	if p.Mode == pane.ModeSearch {
 		result += "\n" + lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FFFF00")).
-			Render("/" + p.SearchQuery)
+			Render("/"+p.SearchQuery)
 	}
 	return result
 }
@@ -583,7 +584,10 @@ func (m Model) renderZoomed() string {
 	if p.Closed {
 		content = strings.Repeat(" ", contentW*contentH)
 	} else {
-		curRow, curCol := p.VTerm.Cursor()
+		curRow, curCol := -1, -1
+		if m.zoomedPane >= 0 {
+			curRow, curCol = p.VTerm.Cursor()
+		}
 		rendered := pane.RenderVTerm(p.VTerm, curRow, curCol)
 		content = rendered
 	}
@@ -658,4 +662,24 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func fitToViewport(s string, width, height int) string {
+	if width <= 0 || height <= 0 {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for i := range lines {
+		vis := lipgloss.Width(lines[i])
+		if vis < width {
+			lines[i] += strings.Repeat(" ", width-vis)
+		}
+	}
+	for len(lines) < height {
+		lines = append(lines, strings.Repeat(" ", width))
+	}
+	return strings.Join(lines, "\n")
 }

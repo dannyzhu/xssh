@@ -4,7 +4,7 @@ package session
 type Status int
 
 const (
-	StatusConnecting   Status = iota
+	StatusConnecting Status = iota
 	StatusConnected
 	StatusDisconnected
 	StatusReconnecting
@@ -38,3 +38,7 @@ type Session interface {
 	Status() Status
 	Title() string
 }
+
+// EmulatedTerm is the TERM value advertised to child sessions.
+// Keep this conservative and aligned with vt10x capabilities.
+const EmulatedTerm = "xterm-256color"

@@ -13,6 +13,7 @@ type csiEscape struct {
 	args []int
 	mode byte
 	priv bool
+	pfx  byte
 }
 
 func (c *csiEscape) reset() {
@@ -20,6 +21,7 @@ func (c *csiEscape) reset() {
 	c.args = c.args[:0]
 	c.mode = 0
 	c.priv = false
+	c.pfx = 0
 }
 
 func (c *csiEscape) put(b byte) bool {
@@ -38,9 +40,16 @@ func (c *csiEscape) parse() {
 	}
 	s := string(c.buf)
 	c.args = c.args[:0]
-	if s[0] == '?' {
-		c.priv = true
-		s = s[1:]
+	if len(s) > 0 {
+		switch s[0] {
+		case '?':
+			c.priv = true
+			c.pfx = '?'
+			s = s[1:]
+		case '>', '<', '=', '!':
+			c.pfx = s[0]
+			s = s[1:]
+		}
 	}
 	s = s[:len(s)-1]
 	ss := strings.Split(s, ";")
@@ -145,6 +154,9 @@ func (t *State) handleCSI() {
 	case 'L': // IL - insert <n> blank lines
 		t.insertBlankLines(c.arg(0, 1))
 	case 'l': // RM - reset mode
+		if c.pfx != 0 && !c.priv {
+			goto unknown
+		}
 		t.setMode(c.priv, false, c.args)
 	case 'M': // DL - delete <n> lines
 		t.deleteLines(c.arg(0, 1))
@@ -160,6 +172,9 @@ func (t *State) handleCSI() {
 	case 'd': // VPA - move to <row>
 		t.moveAbsTo(t.cur.X, c.arg(0, 1)-1)
 	case 'h': // SM - set terminal mode
+		if c.pfx != 0 && !c.priv {
+			goto unknown
+		}
 		t.setMode(c.priv, true, c.args)
 	case 'm': // SGR - terminal attribute (color)
 		t.setAttr(c.args)
@@ -178,8 +193,14 @@ func (t *State) handleCSI() {
 			t.moveAbsTo(0, 0)
 		}
 	case 's': // DECSC - save cursor position (ANSI.SYS)
+		if c.pfx != 0 {
+			goto unknown
+		}
 		t.saveCursor()
 	case 'u': // DECRC - restore cursor position (ANSI.SYS)
+		if c.pfx != 0 {
+			goto unknown
+		}
 		t.restoreCursor()
 	}
 	return

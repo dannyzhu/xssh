@@ -35,3 +35,13 @@ func TestRenderVTermMultiLine(t *testing.T) {
 		t.Errorf("missing Line2 in output")
 	}
 }
+
+func TestRenderVTerm_DoesNotSkipCellsAfterWideRune(t *testing.T) {
+	v := NewVTerm(2, 10)
+	v.Write([]byte("😀a"))
+
+	got := RenderVTerm(v, -1, -1)
+	if !strings.Contains(got, "a") {
+		t.Fatalf("rendered output skipped cell after wide rune: %q", got)
+	}
+}

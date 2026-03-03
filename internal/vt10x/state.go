@@ -3,6 +3,7 @@ package vt10x
 import (
 	"io"
 	"log"
+	"os"
 	"sync"
 )
 
@@ -105,10 +106,16 @@ type State struct {
 }
 
 func newState(w io.Writer) *State {
-	return &State{
+	s := &State{
 		w:             w,
 		colorOverride: make(map[Color]Color),
 	}
+	if os.Getenv("XSSH_VT_DEBUG") == "1" {
+		if f, err := os.OpenFile("/tmp/xssh-vt.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600); err == nil {
+			s.DebugLogger = log.New(f, "vt10x: ", log.LstdFlags|log.Lmicroseconds)
+		}
+	}
+	return s
 }
 
 func (t *State) logf(format string, args ...interface{}) {
@@ -297,7 +304,7 @@ func (t *State) reset() {
 	t.top = 0
 	t.bottom = t.rows - 1
 	t.mode = ModeWrap
-	t.clear(0, 0, t.rows-1, t.cols-1)
+	t.clear(0, 0, t.cols-1, t.rows-1)
 	t.moveTo(0, 0)
 }
 
@@ -546,21 +553,43 @@ func (t *State) setMode(priv bool, set bool, args []int) {
 				t.modMode(set, ModeFocus)
 			case 1006: // extended reporting mode
 				t.modMode(set, ModeMouseSgr)
+			case 2004: // bracketed paste mode
+				// Bracketed paste delimiters are handled by the application layer.
+				// Keep as recognized no-op to avoid unknown-mode churn.
+			case 2026: // synchronized output mode
+				// Implemented in pane/VTerm as atomic flush buffering.
+				// Keep as recognized no-op in terminal mode flags.
 			case 1034:
 				t.modMode(set, Mode8bit)
-			case 1049, // = 1047 and 1048
-				47, 1047:
+			case 1049:
 				alt := t.mode&ModeAltScreen != 0
-				if alt {
-					t.clear(0, 0, t.cols-1, t.rows-1)
+				if set {
+					// Save cursor on main screen, then switch to alt and clear it.
+					if !alt {
+						t.saveCursor()
+						t.swapScreen()
+					}
+					t.clearAll()
+					t.moveAbsTo(0, 0)
+				} else {
+					// Leave alt screen and restore cursor on main screen.
+					if alt {
+						t.swapScreen()
+					}
+					t.restoreCursor()
 				}
-				if !set || !alt {
+			case 47, 1047:
+				alt := t.mode&ModeAltScreen != 0
+				if set {
+					if !alt {
+						t.swapScreen()
+					}
+					// Keep alternate buffer deterministic across applications.
+					t.clearAll()
+					t.moveAbsTo(0, 0)
+				} else if alt {
 					t.swapScreen()
 				}
-				if a != 1049 {
-					break
-				}
-				fallthrough
 			case 1048:
 				if set {
 					t.saveCursor()

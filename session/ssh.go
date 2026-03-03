@@ -31,8 +31,8 @@ func debugLog(format string, args ...any) {
 
 // SSHSession manages an SSH connection to a remote host.
 type SSHSession struct {
-	entry  *config.HostEntry
-	title  string
+	entry *config.HostEntry
+	title string
 
 	client  *ssh.Client
 	session *ssh.Session
@@ -116,7 +116,7 @@ func (s *SSHSession) Connect() error {
 		ssh.TTY_OP_ISPEED: 14400,
 		ssh.TTY_OP_OSPEED: 14400,
 	}
-	if err := sess.RequestPty("xterm-256color", 24, 80, modes); err != nil {
+	if err := sess.RequestPty(EmulatedTerm, 24, 80, modes); err != nil {
 		sess.Close()
 		client.Close()
 		s.setStatus(StatusDisconnected)

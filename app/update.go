@@ -12,7 +12,8 @@ import (
 
 // Init is called once at startup. It connects all sessions and enters alt-screen.
 func (m Model) Init() tea.Cmd {
-	return connectAll(&m)
+	m.hostCursorShown = false
+	return tea.Batch(connectAll(&m), hostCursorCmd(false))
 }
 
 // Update is the bubbletea update function. It handles all messages and returns
@@ -35,6 +36,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.PaneID >= 0 && msg.PaneID < len(m.panes) {
 			p := m.panes[msg.PaneID]
 			p.VTerm.Write(msg.Data)
+			if replies := p.VTerm.DrainReplies(); len(replies) > 0 && p.Session != nil && p.IsActive() {
+				p.Session.Write(replies) //nolint:errcheck
+			}
 			p.Scroll.AppendRaw(msg.Data)
 			// New output arrives — exit scroll mode so cursor is visible
 			if p.Mode == pane.ModeScroll || p.Mode == pane.ModeSearch {
@@ -101,7 +105,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	}
 
+	if cmd := m.maybeHostCursorCmd(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
 	return m, tea.Batch(cmds...)
+}
+
+func hostCursorCmd(show bool) tea.Cmd {
+	return func() tea.Msg {
+		if show {
+			return tea.ShowCursor()
+		}
+		return tea.HideCursor()
+	}
+}
+
+func (m *Model) hostCursorVisible() bool {
+	if m.focusTarget == FocusAddPane {
+		return true
+	}
+	if m.focusedPane >= 0 && m.focusedPane < len(m.panes) {
+		return m.panes[m.focusedPane].PasswordOverlay
+	}
+	return false
+}
+
+func (m *Model) maybeHostCursorCmd() tea.Cmd {
+	show := m.hostCursorVisible()
+	if show == m.hostCursorShown {
+		return nil
+	}
+	m.hostCursorShown = show
+	return hostCursorCmd(show)
 }
 
 // handleKey dispatches keyboard events based on current focus and prefix state.
@@ -200,7 +235,7 @@ func (m *Model) dispatchAction(action Action, _ string) tea.Cmd {
 	case ActionFocusPane1, ActionFocusPane2, ActionFocusPane3,
 		ActionFocusPane4, ActionFocusPane5, ActionFocusPane6,
 		ActionFocusPane7, ActionFocusPane8, ActionFocusPane9:
-		idx := int(action-ActionFocusPane1)
+		idx := int(action - ActionFocusPane1)
 		if idx < len(m.panes) && !m.panes[idx].Closed {
 			m.focusedPane = idx
 			m.zoomedPane = -1
@@ -646,7 +681,17 @@ func keyBytes(key string) []byte {
 // Returns (true, rawContent) when a paste is detected.
 func detectPaste(msg tea.KeyMsg, key string) (bool, string) {
 	if msg.Paste {
-		return true, string(msg.Runes)
+		// Prefer Key.String() because Bubble Tea may wrap paste payload as
+		// "[...]" there even when Runes can vary by terminal/backend.
+		if unwrapped, ok := unwrapPasteBrackets(key); ok {
+			return true, unwrapped
+		}
+		raw := string(msg.Runes)
+		// Some backends may also place the wrapped form in Runes.
+		if unwrapped, ok := unwrapPasteBrackets(raw); ok {
+			return true, unwrapped
+		}
+		return true, raw
 	}
 	// Fallback: String() wraps paste in "[…]"; a single typed keystroke can
 	// never produce that pattern (individual '[' or ']' are len==1).
@@ -654,6 +699,13 @@ func detectPaste(msg tea.KeyMsg, key string) (bool, string) {
 		return true, key[1 : len(key)-1]
 	}
 	return false, ""
+}
+
+func unwrapPasteBrackets(s string) (string, bool) {
+	if len(s) > 2 && s[0] == '[' && s[len(s)-1] == ']' {
+		return s[1 : len(s)-1], true
+	}
+	return "", false
 }
 
 // handleMouseClick focuses the pane at terminal coordinate (x, y), or

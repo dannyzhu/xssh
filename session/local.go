@@ -51,7 +51,7 @@ func (s *LocalSession) Connect() error {
 	s.mu.Unlock()
 
 	cmd := exec.Command(s.args[0], s.args[1:]...)
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "COLORTERM=truecolor")
+	cmd.Env = append(os.Environ(), "TERM="+EmulatedTerm, "COLORTERM=truecolor")
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		s.mu.Lock()

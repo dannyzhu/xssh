@@ -49,8 +49,18 @@ func renderRow(v *VTerm, row, cols, cursorRow, cursorCol int) string {
 
 		s := string(ch)
 		style := cellStyle(cell)
+		// Some TUIs temporarily underline whole-space regions; rendering those
+		// literally produces horizontal "rule" artifacts in pane backgrounds.
+		if ch == ' ' {
+			style = style.Underline(false).Blink(false)
+		}
 		if row == cursorRow && c == cursorCol {
-			style = style.Reverse(true)
+			// Draw a deterministic block cursor that remains visible even when
+			// the cell already uses reverse/video attributes.
+			style = style.
+				Foreground(lipgloss.Color("#000000")).
+				Background(lipgloss.Color("#FFFFFF")).
+				Reverse(false)
 		}
 		sb.WriteString(style.Render(s))
 		c += w

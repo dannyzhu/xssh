@@ -58,3 +58,31 @@ func TestLocalSessionTitle(t *testing.T) {
 		t.Error("Title should not be empty")
 	}
 }
+
+func TestLocalSessionUsesEmulatedTerm(t *testing.T) {
+	s := NewLocalCmd([]string{"sh", "-lc", "printf '%s' \"$TERM\"; exit"}, "term")
+	if err := s.Connect(); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer s.Close()
+
+	timeout := time.After(2 * time.Second)
+	var got []byte
+	for {
+		select {
+		case data, ok := <-s.Output():
+			if !ok {
+				if !bytes.Contains(got, []byte(EmulatedTerm)) {
+					t.Fatalf("TERM output missing %q, got: %q", EmulatedTerm, got)
+				}
+				return
+			}
+			got = append(got, data...)
+			if bytes.Contains(got, []byte(EmulatedTerm)) {
+				return
+			}
+		case <-timeout:
+			t.Fatalf("timeout waiting for TERM output, got: %q", got)
+		}
+	}
+}
