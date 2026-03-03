@@ -128,13 +128,29 @@ func connectPane(id int, p *pane.Pane) tea.Cmd {
 }
 
 // listenPane returns a Cmd that blocks on the pane output channel.
+// After receiving the first chunk it drains all immediately available
+// chunks so that a burst of PTY output (e.g. a full TUI frame) is
+// delivered as a single message, reducing redundant re-renders.
 func listenPane(id int, ch <-chan []byte) tea.Cmd {
 	return func() tea.Msg {
 		data, ok := <-ch
 		if !ok {
 			return PaneStatusMsg{PaneID: id, Status: session.StatusDisconnected}
 		}
-		return PaneOutputMsg{PaneID: id, Data: data}
+		// Drain any additional chunks that are already buffered.
+		for {
+			select {
+			case extra, ok2 := <-ch:
+				if !ok2 {
+					// Channel closed — deliver what we have; next listen
+					// will report disconnected.
+					return PaneOutputMsg{PaneID: id, Data: data}
+				}
+				data = append(data, extra...)
+			default:
+				return PaneOutputMsg{PaneID: id, Data: data}
+			}
+		}
 	}
 }
 
