@@ -10,10 +10,16 @@ import (
 )
 
 // vt10x glyph mode bit values (unexported in vt10x, mirrored here).
+// Must match the iota order in state.go: Reverse, Underline, Bold, Gfx, Italic, Blink, Wrap, Faint.
 const (
 	glyphAttrReverse   int16 = 1 << 0
 	glyphAttrUnderline int16 = 1 << 1
 	glyphAttrBold      int16 = 1 << 2
+	// glyphAttrGfx    int16 = 1 << 3 (internal to vt10x, not needed for rendering)
+	glyphAttrItalic int16 = 1 << 4
+	glyphAttrBlink  int16 = 1 << 5
+	// glyphAttrWrap   int16 = 1 << 6 (internal to vt10x, not needed for rendering)
+	glyphAttrFaint int16 = 1 << 7
 )
 
 // RenderVTerm renders the VTerm character matrix to a lipgloss string.
@@ -63,8 +69,17 @@ func cellStyle(cell vt10x.Glyph) lipgloss.Style {
 	if cell.Mode&glyphAttrBold != 0 {
 		style = style.Bold(true)
 	}
+	if cell.Mode&glyphAttrFaint != 0 {
+		style = style.Faint(true)
+	}
+	if cell.Mode&glyphAttrItalic != 0 {
+		style = style.Italic(true)
+	}
 	if cell.Mode&glyphAttrUnderline != 0 {
 		style = style.Underline(true)
+	}
+	if cell.Mode&glyphAttrBlink != 0 {
+		style = style.Blink(true)
 	}
 	if cell.Mode&glyphAttrReverse != 0 {
 		style = style.Reverse(true)
@@ -73,18 +88,16 @@ func cellStyle(cell vt10x.Glyph) lipgloss.Style {
 }
 
 func vtColor(c vt10x.Color) lipgloss.Color {
-	if c < 16 {
-		return lipgloss.Color(ansi16[c])
+	if c <= 255 {
+		// ANSI 0-15 and 256-color 16-255: pass as index so the
+		// terminal applies its own palette (matches user's theme).
+		return lipgloss.Color(fmt.Sprintf("%d", c))
 	}
-	// 256-color or truecolor: pass as ANSI index
-	return lipgloss.Color(fmt.Sprintf("%d", c))
-}
-
-var ansi16 = [16]string{
-	"#000000", "#800000", "#008000", "#808000",
-	"#000080", "#800080", "#008080", "#c0c0c0",
-	"#808080", "#ff0000", "#00ff00", "#ffff00",
-	"#0000ff", "#ff00ff", "#00ffff", "#ffffff",
+	// True color (24-bit RGB): vt10x stores as r<<16 | g<<8 | b
+	r := (c >> 16) & 0xFF
+	g := (c >> 8) & 0xFF
+	b := c & 0xFF
+	return lipgloss.Color(fmt.Sprintf("#%02x%02x%02x", r, g, b))
 }
 
 // renderRowPlain renders one VTerm row as plain text (no ANSI).

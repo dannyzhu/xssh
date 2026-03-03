@@ -108,6 +108,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 	key := msg.String()
 
+	// ── Paste: forward raw content to the PTY (bypass keyBytes) ─────────────
+	// Bubbletea wraps pasted text as "[content]" via Key.String() and sets
+	// Paste=true. Detect both the flag and the string pattern as a fallback.
+	if isPaste, content := detectPaste(msg, key); isPaste {
+		data := []byte(content)
+		if m.focusTarget == FocusBroadcast {
+			m.sendBroadcast(data)
+		} else if m.focusedPane >= 0 && m.focusedPane < len(m.panes) {
+			p := m.panes[m.focusedPane]
+			if p.IsActive() {
+				p.Session.Write(data) //nolint:errcheck
+			}
+		}
+		return nil
+	}
+
 	// ── Password overlay ─────────────────────────────────────────────────────
 	if m.focusedPane >= 0 && m.focusedPane < len(m.panes) {
 		p := m.panes[m.focusedPane]
@@ -615,11 +631,30 @@ func keyBytes(key string) []byte {
 		if len(key) == 1 {
 			return []byte(key)
 		}
+		// Strip bubbletea paste brackets "[…]" if present.
+		if len(key) > 2 && key[0] == '[' && key[len(key)-1] == ']' {
+			return []byte(key[1 : len(key)-1])
+		}
 		// Multi-rune or unknown: best effort
 		return []byte(key)
 	}
 }
 
+// detectPaste checks whether msg is a paste event.  Bubbletea sets Paste=true
+// and wraps the String() result in "[…]".  We check both as a belt-and-suspenders
+// measure: the Paste flag, OR the "[…]" pattern on the string representation.
+// Returns (true, rawContent) when a paste is detected.
+func detectPaste(msg tea.KeyMsg, key string) (bool, string) {
+	if msg.Paste {
+		return true, string(msg.Runes)
+	}
+	// Fallback: String() wraps paste in "[…]"; a single typed keystroke can
+	// never produce that pattern (individual '[' or ']' are len==1).
+	if len(key) > 2 && key[0] == '[' && key[len(key)-1] == ']' {
+		return true, key[1 : len(key)-1]
+	}
+	return false, ""
+}
 
 // handleMouseClick focuses the pane at terminal coordinate (x, y), or
 // activates the input bar when the user clicks the bottom chrome area.
