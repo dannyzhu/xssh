@@ -70,10 +70,12 @@ func renderRow(v *VTerm, row, cols, cursorRow, cursorCol int) string {
 
 func cellStyle(cell vt10x.Glyph) lipgloss.Style {
 	style := lipgloss.NewStyle()
-	if cell.FG != vt10x.DefaultFG {
+	// vt10x pre-swaps FG/BG for reverse-video cells, so DefaultBG can appear
+	// as FG and DefaultFG as BG.  Treat both sentinel values as "use default".
+	if cell.FG != vt10x.DefaultFG && cell.FG != vt10x.DefaultBG {
 		style = style.Foreground(vtColor(cell.FG))
 	}
-	if cell.BG != vt10x.DefaultBG {
+	if cell.BG != vt10x.DefaultBG && cell.BG != vt10x.DefaultFG {
 		style = style.Background(vtColor(cell.BG))
 	}
 	if cell.Mode&glyphAttrBold != 0 {
@@ -102,6 +104,11 @@ func vtColor(c vt10x.Color) lipgloss.Color {
 		// ANSI 0-15 and 256-color 16-255: pass as index so the
 		// terminal applies its own palette (matches user's theme).
 		return lipgloss.Color(fmt.Sprintf("%d", c))
+	}
+	// vt10x uses bit 24 as a sentinel for default colors (DefaultFG, DefaultBG).
+	// These should never reach here (filtered by cellStyle), but guard anyway.
+	if c&(1<<24) != 0 {
+		return lipgloss.Color("")
 	}
 	// True color (24-bit RGB): vt10x stores as r<<16 | g<<8 | b
 	r := (c >> 16) & 0xFF

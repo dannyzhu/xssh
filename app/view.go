@@ -186,7 +186,10 @@ func (m Model) renderPaneContent(idx, contentW, contentH int) string {
 	} else if p.Mode == pane.ModeScroll || p.Mode == pane.ModeSearch {
 		content = m.renderScrollContent(p, contentW, contentH)
 	} else {
-		curRow, curCol := p.VTerm.Cursor()
+		curRow, curCol := -1, -1
+		if p.VTerm.CursorVisible() {
+			curRow, curCol = p.VTerm.Cursor()
+		}
 		rendered := pane.RenderVTerm(p.VTerm, curRow, curCol)
 		lines := strings.Split(rendered, "\n")
 		if len(lines) > contentH {
@@ -585,7 +588,7 @@ func (m Model) renderZoomed() string {
 		content = strings.Repeat(" ", contentW*contentH)
 	} else {
 		curRow, curCol := -1, -1
-		if m.zoomedPane >= 0 {
+		if m.zoomedPane >= 0 && p.VTerm.CursorVisible() {
 			curRow, curCol = p.VTerm.Cursor()
 		}
 		rendered := pane.RenderVTerm(p.VTerm, curRow, curCol)
