@@ -159,6 +159,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
+	// ── Drop SGR mouse sequences that bubbletea delivered as KeyMsg ──────────
+	if isSGRMouseSeq(key) {
+		return nil
+	}
+
 	// ── Password overlay ─────────────────────────────────────────────────────
 	if m.focusedPane >= 0 && m.focusedPane < len(m.panes) {
 		p := m.panes[m.focusedPane]
@@ -603,6 +608,21 @@ func (m *Model) addPaneToSlot(slot int, target string) tea.Cmd {
 	m.broadcastTo[slot] = false
 	m.focusedPane = slot
 	return connectPane(slot, p)
+}
+
+// isSGRMouseSeq returns true when key looks like an SGR mouse escape
+// that bubbletea failed to parse as a MouseMsg and delivered as a KeyMsg.
+// These have the form "alt+[<NN;NN;NNM" or "alt+[<NN;NN;NNm".
+func isSGRMouseSeq(key string) bool {
+	const prefix = "alt+[<"
+	if len(key) < len(prefix)+4 { // minimum: alt+[<0;0;0M
+		return false
+	}
+	if key[:len(prefix)] != prefix {
+		return false
+	}
+	last := key[len(key)-1]
+	return last == 'M' || last == 'm'
 }
 
 // keyBytes converts a bubbletea key string back to raw bytes for session write.

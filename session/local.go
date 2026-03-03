@@ -69,7 +69,7 @@ func (s *LocalSession) Connect() error {
 }
 
 func (s *LocalSession) readLoop() {
-	buf := make([]byte, 4096)
+	buf := make([]byte, 32768)
 	for {
 		n, err := s.ptmx.Read(buf)
 		if n > 0 {

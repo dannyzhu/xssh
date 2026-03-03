@@ -70,13 +70,21 @@ func renderRow(v *VTerm, row, cols, cursorRow, cursorCol int) string {
 
 func cellStyle(cell vt10x.Glyph) lipgloss.Style {
 	style := lipgloss.NewStyle()
-	// vt10x pre-swaps FG/BG for reverse-video cells, so DefaultBG can appear
-	// as FG and DefaultFG as BG.  Treat both sentinel values as "use default".
-	if cell.FG != vt10x.DefaultFG && cell.FG != vt10x.DefaultBG {
-		style = style.Foreground(vtColor(cell.FG))
+
+	fg, bg := cell.FG, cell.BG
+	if cell.Mode&glyphAttrReverse != 0 {
+		// vt10x pre-swaps FG/BG for reverse-video cells. Undo the swap
+		// so we can emit SGR 7 (Reverse) and let the real terminal handle
+		// the color reversal — this correctly handles mixed cases where
+		// one color is explicit and the other is the terminal default.
+		fg, bg = cell.BG, cell.FG
 	}
-	if cell.BG != vt10x.DefaultBG && cell.BG != vt10x.DefaultFG {
-		style = style.Background(vtColor(cell.BG))
+
+	if fg != vt10x.DefaultFG && fg != vt10x.DefaultBG {
+		style = style.Foreground(vtColor(fg))
+	}
+	if bg != vt10x.DefaultBG && bg != vt10x.DefaultFG {
+		style = style.Background(vtColor(bg))
 	}
 	if cell.Mode&glyphAttrBold != 0 {
 		style = style.Bold(true)

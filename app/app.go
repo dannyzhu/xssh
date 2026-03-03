@@ -142,15 +142,38 @@ func listenPane(id int, ch <-chan []byte) tea.Cmd {
 			select {
 			case extra, ok2 := <-ch:
 				if !ok2 {
-					// Channel closed — deliver what we have; next listen
-					// will report disconnected.
 					return PaneOutputMsg{PaneID: id, Data: data}
 				}
 				data = append(data, extra...)
 			default:
-				return PaneOutputMsg{PaneID: id, Data: data}
+				goto drained
 			}
 		}
+	drained:
+		// If we received a non-trivial amount of data (likely a TUI frame
+		// redraw), wait briefly for remaining chunks still in transit.
+		// This prevents rendering intermediate states that cause flicker.
+		if len(data) > 128 {
+			timer := time.NewTimer(3 * time.Millisecond)
+			for {
+				select {
+				case extra, ok2 := <-ch:
+					if !ok2 {
+						timer.Stop()
+						return PaneOutputMsg{PaneID: id, Data: data}
+					}
+					data = append(data, extra...)
+					// Reset timer — more data may follow.
+					if !timer.Stop() {
+						<-timer.C
+					}
+					timer.Reset(3 * time.Millisecond)
+				case <-timer.C:
+					return PaneOutputMsg{PaneID: id, Data: data}
+				}
+			}
+		}
+		return PaneOutputMsg{PaneID: id, Data: data}
 	}
 }
 
