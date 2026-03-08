@@ -22,18 +22,51 @@ const (
 	glyphAttrFaint int16 = 1 << 7
 )
 
+// Selection describes a text selection range in pane-local cell coordinates.
+type Selection struct {
+	StartRow, StartCol int
+	EndRow, EndCol     int
+}
+
+// Normalise returns the selection with start <= end.
+func (s Selection) Normalise() (r1, c1, r2, c2 int) {
+	r1, c1, r2, c2 = s.StartRow, s.StartCol, s.EndRow, s.EndCol
+	if r1 > r2 || (r1 == r2 && c1 > c2) {
+		r1, c1, r2, c2 = r2, c2, r1, c1
+	}
+	return
+}
+
 // RenderVTerm renders the VTerm character matrix to a lipgloss string.
 // cursorRow/cursorCol: current cursor position (-1 = no cursor).
-func RenderVTerm(v *VTerm, cursorRow, cursorCol int) string {
+// sel: optional selection highlight (nil = no selection).
+func RenderVTerm(v *VTerm, cursorRow, cursorCol int, sel *Selection) string {
 	rows, cols := v.Size()
 	lines := make([]string, rows)
 	for r := 0; r < rows; r++ {
-		lines[r] = renderRow(v, r, cols, cursorRow, cursorCol)
+		lines[r] = renderRow(v, r, cols, cursorRow, cursorCol, sel)
 	}
 	return strings.Join(lines, "\n")
 }
 
-func renderRow(v *VTerm, row, cols, cursorRow, cursorCol int) string {
+func renderRow(v *VTerm, row, cols, cursorRow, cursorCol int, sel *Selection) string {
+	// Pre-compute selection range for this row.
+	selC1, selC2 := -1, -1
+	if sel != nil {
+		r1, c1, r2, c2 := sel.Normalise()
+		if row >= r1 && row <= r2 {
+			if r1 == r2 {
+				selC1, selC2 = c1, c2
+			} else if row == r1 {
+				selC1, selC2 = c1, cols-1
+			} else if row == r2 {
+				selC1, selC2 = 0, c2
+			} else {
+				selC1, selC2 = 0, cols-1
+			}
+		}
+	}
+
 	var sb strings.Builder
 	c := 0
 	for c < cols {
@@ -60,6 +93,12 @@ func renderRow(v *VTerm, row, cols, cursorRow, cursorCol int) string {
 			style = style.
 				Foreground(lipgloss.Color("#000000")).
 				Background(lipgloss.Color("#FFFFFF")).
+				Reverse(false)
+		}
+		// Highlight selected cells.
+		if c >= selC1 && c <= selC2 {
+			style = style.
+				Background(lipgloss.Color("#44475A")).
 				Reverse(false)
 		}
 		sb.WriteString(style.Render(s))

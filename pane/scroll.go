@@ -65,7 +65,7 @@ func (b *ScrollBuffer) replay(cols int) {
 	b.cacheStyled = make([]string, n)
 	b.cachePlain = make([]string, n)
 	for r := 0; r < n; r++ {
-		b.cacheStyled[r] = renderRow(v, r, cols, -1, -1)
+		b.cacheStyled[r] = renderRow(v, r, cols, -1, -1, nil)
 		b.cachePlain[r] = renderRowPlain(v, r, cols)
 	}
 	b.cacheDirty = false

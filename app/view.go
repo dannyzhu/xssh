@@ -190,7 +190,14 @@ func (m Model) renderPaneContent(idx, contentW, contentH int) string {
 		if p.VTerm.CursorVisible() {
 			curRow, curCol = p.VTerm.Cursor()
 		}
-		rendered := pane.RenderVTerm(p.VTerm, curRow, curCol)
+		var sel *pane.Selection
+		if m.selPaneIdx == idx && (m.selecting || (m.selStartRow != m.selEndRow || m.selStartCol != m.selEndCol)) {
+			sel = &pane.Selection{
+				StartRow: m.selStartRow, StartCol: m.selStartCol,
+				EndRow: m.selEndRow, EndCol: m.selEndCol,
+			}
+		}
+		rendered := pane.RenderVTerm(p.VTerm, curRow, curCol, sel)
 		lines := strings.Split(rendered, "\n")
 		if len(lines) > contentH {
 			lines = lines[len(lines)-contentH:]
@@ -591,7 +598,14 @@ func (m Model) renderZoomed() string {
 		if m.zoomedPane >= 0 && p.VTerm.CursorVisible() {
 			curRow, curCol = p.VTerm.Cursor()
 		}
-		rendered := pane.RenderVTerm(p.VTerm, curRow, curCol)
+		var sel *pane.Selection
+		if m.selPaneIdx == m.zoomedPane && (m.selecting || (m.selStartRow != m.selEndRow || m.selStartCol != m.selEndCol)) {
+			sel = &pane.Selection{
+				StartRow: m.selStartRow, StartCol: m.selStartCol,
+				EndRow: m.selEndRow, EndCol: m.selEndCol,
+			}
+		}
+		rendered := pane.RenderVTerm(p.VTerm, curRow, curCol, sel)
 		content = rendered
 	}
 

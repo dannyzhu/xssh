@@ -1,7 +1,8 @@
 package app
 
 import (
-	"time"
+	"os/exec"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -96,10 +97,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// ── Mouse input ──────────────────────────────────────────────────────────
 	case tea.MouseMsg:
-		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
-			m.handleMouseClick(msg.X, msg.Y)
-		}
-		if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
+		switch {
+		case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress:
+			m.handleMousePress(msg.X, msg.Y)
+		case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionMotion:
+			m.handleMouseMotion(msg.X, msg.Y)
+		case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionRelease:
+			cmd := m.handleMouseRelease(msg.X, msg.Y)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		case msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown:
 			m.handleMouseScroll(msg.X, msg.Y, msg.Button == tea.MouseButtonWheelUp)
 		}
 
@@ -141,6 +149,9 @@ func (m *Model) maybeHostCursorCmd() tea.Cmd {
 
 // handleKey dispatches keyboard events based on current focus and prefix state.
 func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
+	// Clear any active text selection on keypress.
+	m.selPaneIdx = -1
+
 	key := msg.String()
 
 	// ── Paste: forward raw content to the PTY (bypass keyBytes) ─────────────
@@ -728,13 +739,59 @@ func unwrapPasteBrackets(s string) (string, bool) {
 	return "", false
 }
 
-// handleMouseClick focuses the pane at terminal coordinate (x, y), or
-// activates the input bar when the user clicks the bottom chrome area.
-func (m *Model) handleMouseClick(x, y int) {
-	// Click in the input bar area → enter broadcast mode
-	inputBarTop := m.height - m.inputBarHeight()
-	if y >= inputBarTop {
-		if m.focusTarget == FocusPane {
+// hitTestPane returns the pane index and pane-local (row, col) for terminal
+// coordinate (x, y). Returns -1 if the click is outside any pane.
+func (m *Model) hitTestPane(x, y int) (paneIdx, row, col int) {
+	if m.zoomedPane >= 0 {
+		// Zoomed: single pane fills the viewport.
+		p := m.panes[m.zoomedPane]
+		contentW := m.width - 2
+		contentH := m.height - m.reservedHeight()
+		// Account for status bar (1 row) + top border (1 row).
+		localRow := y - statusBarHeight - 1
+		localCol := x - 1 // left border
+		if localRow >= 0 && localRow < contentH && localCol >= 0 && localCol < contentW {
+			_ = p
+			return m.zoomedPane, localRow, localCol
+		}
+		return -1, 0, 0
+	}
+
+	for i, rect := range m.layout.Panes {
+		if i >= len(m.panes) || m.panes[i].Closed {
+			continue
+		}
+		if x >= rect.X && x < rect.X+rect.Width &&
+			y >= rect.Y && y < rect.Y+rect.Height {
+			localCol := x - rect.X
+			localRow := y - rect.Y
+			if m.borderMode == BorderShared {
+				// In shared mode, rect already describes content area
+				// but Y includes the top border row.
+				localRow = y - rect.Y
+				localCol = x - rect.X
+			} else {
+				// Full border mode: subtract border
+				localRow = y - rect.Y - borderWidth
+				localCol = x - rect.X - borderWidth
+			}
+			return i, localRow, localCol
+		}
+	}
+	return -1, 0, 0
+}
+
+// handleMousePress starts a text selection or focuses a pane.
+func (m *Model) handleMousePress(x, y int) {
+	// Clear any previous selection.
+	m.selecting = false
+	m.selPaneIdx = -1
+
+	paneIdx, row, col := m.hitTestPane(x, y)
+	if paneIdx < 0 {
+		// Click in input bar → enter broadcast
+		inputBarTop := m.height - m.inputBarHeight()
+		if y >= inputBarTop && m.focusTarget == FocusPane {
 			m.focusTarget = FocusBroadcast
 			for i, p := range m.panes {
 				m.broadcastTo[i] = !p.Closed
@@ -743,19 +800,127 @@ func (m *Model) handleMouseClick(x, y int) {
 		return
 	}
 
-	// Click in a pane — find which one
-	for i, rect := range m.layout.Panes {
-		if i >= len(m.panes) || m.panes[i].Closed {
-			continue
-		}
-		if x >= rect.X && x < rect.X+rect.Width &&
-			y >= rect.Y && y < rect.Y+rect.Height {
-			m.focusedPane = i
-			m.focusTarget = FocusPane
-			m.prefixState = PrefixIdle
-			return
-		}
+	// Focus the clicked pane.
+	m.focusedPane = paneIdx
+	m.focusTarget = FocusPane
+	m.prefixState = PrefixIdle
+
+	// Begin selection.
+	m.selecting = true
+	m.selPaneIdx = paneIdx
+	m.selStartRow = row
+	m.selStartCol = col
+	m.selEndRow = row
+	m.selEndCol = col
+}
+
+// handleMouseMotion extends the current text selection.
+func (m *Model) handleMouseMotion(x, y int) {
+	if !m.selecting || m.selPaneIdx < 0 {
+		return
 	}
+	paneIdx, row, col := m.hitTestPane(x, y)
+	if paneIdx != m.selPaneIdx {
+		return // don't extend selection across panes
+	}
+	m.selEndRow = row
+	m.selEndCol = col
+}
+
+// handleMouseRelease completes selection and copies to clipboard.
+func (m *Model) handleMouseRelease(x, y int) tea.Cmd {
+	if !m.selecting || m.selPaneIdx < 0 {
+		return nil
+	}
+
+	// Update final position.
+	paneIdx, row, col := m.hitTestPane(x, y)
+	if paneIdx == m.selPaneIdx {
+		m.selEndRow = row
+		m.selEndCol = col
+	}
+
+	// If start == end, treat as a simple click (no selection).
+	if m.selStartRow == m.selEndRow && m.selStartCol == m.selEndCol {
+		m.selecting = false
+		m.selPaneIdx = -1
+		return nil
+	}
+
+	// Extract selected text.
+	text := m.extractSelection()
+	m.selecting = false
+
+	if text == "" {
+		m.selPaneIdx = -1
+		return nil
+	}
+
+	// Copy to clipboard via OSC 52 (works in most modern terminals).
+	return copyToClipboard(text)
+}
+
+// extractSelection reads plain text from the selected pane cells.
+func (m *Model) extractSelection() string {
+	if m.selPaneIdx < 0 || m.selPaneIdx >= len(m.panes) {
+		return ""
+	}
+	p := m.panes[m.selPaneIdx]
+	if p.Closed || p.VTerm == nil {
+		return ""
+	}
+
+	// Normalise: ensure start <= end.
+	r1, c1, r2, c2 := m.selStartRow, m.selStartCol, m.selEndRow, m.selEndCol
+	if r1 > r2 || (r1 == r2 && c1 > c2) {
+		r1, c1, r2, c2 = r2, c2, r1, c1
+	}
+
+	rows, cols := p.VTerm.Size()
+	// Clamp to pane bounds.
+	r1 = clamp(r1, 0, rows-1)
+	r2 = clamp(r2, 0, rows-1)
+	c1 = clamp(c1, 0, cols-1)
+	c2 = clamp(c2, 0, cols-1)
+
+	var sb strings.Builder
+	for r := r1; r <= r2; r++ {
+		startC := 0
+		endC := cols - 1
+		if r == r1 {
+			startC = c1
+		}
+		if r == r2 {
+			endC = c2
+		}
+		var lineBuf []byte
+		for c := startC; c <= endC; c++ {
+			cell := p.VTerm.Cell(r, c)
+			ch := cell.Char
+			if ch == 0 {
+				ch = ' '
+			}
+			lineBuf = append(lineBuf, string(ch)...)
+		}
+		line := string(lineBuf)
+		// Trim trailing spaces on each line.
+		line = strings.TrimRight(line, " ")
+		if r > r1 {
+			sb.WriteByte('\n')
+		}
+		sb.WriteString(line)
+	}
+	return sb.String()
+}
+
+func clamp(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 // handleMouseScroll scrolls the pane under (x, y) up or down by 3 lines.
@@ -795,5 +960,16 @@ func (m *Model) handleMouseScroll(x, y int, up bool) {
 	}
 }
 
-// Ensure time import is used
-var _ = time.Second
+// clipboardMsg is emitted after clipboard copy completes.
+type clipboardMsg struct{}
+
+// copyToClipboard copies text to the system clipboard using the pbcopy
+// command on macOS, falling back to OSC 52 for other systems.
+func copyToClipboard(text string) tea.Cmd {
+	return func() tea.Msg {
+		cmd := exec.Command("pbcopy")
+		cmd.Stdin = strings.NewReader(text)
+		_ = cmd.Run()
+		return clipboardMsg{}
+	}
+}

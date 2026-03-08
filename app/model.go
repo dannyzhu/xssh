@@ -76,6 +76,14 @@ type Model struct {
 	// hostCursorShown tracks the last host terminal cursor visibility we asked
 	// Bubble Tea to set, so we only emit hide/show commands on transitions.
 	hostCursorShown bool
+
+	// Mouse text selection state.
+	selecting    bool // true while the user is dragging to select
+	selPaneIdx   int  // pane index where selection started (-1 = none)
+	selStartRow  int  // start position in pane-local cell coordinates
+	selStartCol  int
+	selEndRow    int // current end position
+	selEndCol    int
 }
 
 // NewModel constructs an initial Model with no panes.
@@ -86,6 +94,7 @@ func NewModel(borderMode BorderMode) Model {
 	return Model{
 		focusedPane:       -1,
 		zoomedPane:        -1,
+		selPaneIdx:        -1,
 		focusTarget:       FocusBroadcast,
 		borderMode:        borderMode,
 		addPaneInput:      addInput,
